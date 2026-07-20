@@ -1,0 +1,50 @@
+{
+  "name": "@blackforge/mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for BlackForge — the whole crypto market, in real time. Wraps the BlackForge /v1 market-data API as MCP tools.",
+  "type": "module",
+  "bin": {
+    "blackforge-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "blackforge",
+    "crypto",
+    "market-data",
+    "order-book",
+    "microstructure"
+  ],
+  "author": "BlackForge",
+  "license": "MIT",
+  "homepage": "https://blackforge.so",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blackforge-so/mcp.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
