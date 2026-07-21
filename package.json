@@ -1,5 +1,5 @@
 {
-  "name": "@blackforge/mcp",
+  "name": "@blackforge-so/mcp",
   "version": "0.1.0",
   "description": "Model Context Protocol server for BlackForge — the whole crypto market, in real time. Wraps the BlackForge /v1 market-data API as MCP tools.",
   "type": "module",

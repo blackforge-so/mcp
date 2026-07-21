@@ -1,4 +1,4 @@
-# @blackforge/mcp
+# @blackforge-so/mcp
 
 A [Model Context Protocol](https://modelcontextprotocol.io) stdio server that puts
 BlackForge market-data in your agent's hands. **The whole crypto market, in real time** —
@@ -20,14 +20,14 @@ Add the server to your MCP client and paste an API key. **Claude Desktop**
   "mcpServers": {
     "blackforge": {
       "command": "npx",
-      "args": ["-y", "@blackforge/mcp"],
+      "args": ["-y", "@blackforge-so/mcp"],
       "env": { "BLACKFORGE_API_KEY": "bf_live_your_key" }
     }
   }
 }
 ```
 
-No install step — `npx -y @blackforge/mcp` fetches and runs the server on demand.
+No install step — `npx -y @blackforge-so/mcp` fetches and runs the server on demand.
 
 ### Where to get a key
 
