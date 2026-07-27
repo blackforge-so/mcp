@@ -1,14 +1,23 @@
 #!/usr/bin/env node
 // BlackForge MCP server — the whole crypto market, in real time.
 // A thin stdio server exposing the BlackForge /v1 market-data API as MCP tools.
-// Every tool returns raw measurements over 9 spot venues and up to 117 columns
-// per (exchange, symbol) per 5-minute window. This is market-data, not advice.
+// Every tool returns raw measurements over 9 spot venues, one wide row per
+// (exchange, symbol) per 5-minute window; blackforge_catalog lists the exact
+// column set. This is market-data, not advice.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { BlackForgeClient, type Result } from "./client.js";
-import { BlackForgeApiError, type BlackForgeMeta } from "./types.js";
+import {
+  anyFlagged,
+  bitsFromCatalog,
+  shapeCatalog,
+  shapeLatest,
+  shapeSeries,
+  summarizeQuality,
+} from "./shape.js";
+import { BlackForgeApiError, type BlackForgeMeta, type QualityBit } from "./types.js";
 
 const VERSION = "0.1.0";
 
@@ -16,14 +25,20 @@ const client = new BlackForgeClient();
 
 const server = new McpServer({ name: "blackforge", version: VERSION });
 
-/** Wrap a client call: return compact JSON text, translate errors into tool errors. */
+/**
+ * Wrap a client call: return compact JSON text, translate errors into tool errors.
+ *
+ * `shape` must SPREAD the raw payload and only ADD derived fields — never list
+ * keys explicitly. An allowlist drops any new sibling key the API starts
+ * sending before the model ever sees it.
+ */
 async function respond<T>(
   run: () => Promise<Result<T>>,
-  shape: (data: T, meta: BlackForgeMeta) => unknown,
+  shape: (data: T, meta: BlackForgeMeta) => unknown | Promise<unknown>,
 ) {
   try {
     const { data, meta } = await run();
-    const payload = shape(data, meta);
+    const payload = await shape(data, meta);
     return {
       content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
     };
@@ -36,6 +51,26 @@ async function respond<T>(
   }
 }
 
+/**
+ * The quality-flag decode table, read from the catalog and cached for the
+ * process. Never hardcode a copy of it: a local mirror of this table has
+ * already caused one production incident in this programme. On failure we fall
+ * back to raw masks and let the next call retry.
+ */
+let bitsPromise: Promise<QualityBit[]> | undefined;
+function qualityBits(): Promise<QualityBit[]> {
+  if (!bitsPromise) {
+    bitsPromise = client
+      .catalog()
+      .then(({ data }) => bitsFromCatalog(data))
+      .catch(() => {
+        bitsPromise = undefined; // transient failure: allow a retry later
+        return [];
+      });
+  }
+  return bitsPromise;
+}
+
 // ── blackforge_catalog ───────────────────────────────────────────────────────
 server.registerTool(
   "blackforge_catalog",
@@ -43,21 +78,19 @@ server.registerTool(
     title: "BlackForge catalog",
     description:
       "List every venue BlackForge covers (9 spot exchanges) and every column it measures " +
-      "(up to 117 columns per (exchange, symbol) per 5-minute window: order-book depth and " +
+      "(one wide row per (exchange, symbol) per 5-minute window: order-book depth and " +
       "shape, resting-liquidity lifetimes, trade-explained vs book-implied volume, spreads, " +
-      "and market-wide context). Each metric carries a precise measurement definition, unit, " +
-      "family, and the minimum plan that includes it. This route needs no API key. " +
+      "and market-wide context). `metricCount` is the exact number of columns available now. " +
+      "Each metric carries a precise measurement definition, unit, family, and the minimum " +
+      "plan that includes it; the `qualityFlags` metric also carries the `bits` table that " +
+      "decodes the per-row quality mask. This route needs no API key. " +
       "CALL THIS FIRST to learn the exact `exchange` and `metric` identifiers the other tools accept.",
     inputSchema: {},
   },
   () =>
     respond(
       () => client.catalog(),
-      (data) => ({
-        venues: data.venues,
-        metricCount: data.metrics.length,
-        metrics: data.metrics,
-      }),
+      (data) => shapeCatalog(data),
     ),
 );
 
@@ -94,7 +127,12 @@ server.registerTool(
       "mapping each column key to its measured number (or null when not observed), plus the window " +
       "timestamp `ts` in epoch milliseconds. Omit `columns` to get every column your plan includes; " +
       "pass a subset of column keys (from blackforge_catalog) to narrow the payload. Columns your plan " +
-      "does not cover are dropped and reported in `columnsOmitted` so you can see why a key is absent.",
+      "does not cover are dropped and reported in `columnsOmitted` so you can see why a key is absent. " +
+      "WHEN PRESENT, a `quality` object reports the row's measurement quality — `flags` names what " +
+      "went wrong during the window and `contaminates` lists which figures that makes unreliable, " +
+      "with a plain-English `qualityNote` beside it. Read it before trusting an unusual value. " +
+      "A `quality.raw` of 32768 means the row predates the quality rail and was never assessed — " +
+      "that is unknown, not bad. When the key is absent, the row carries no quality assessment at all.",
     inputSchema: {
       exchange: z.string().describe("Venue identifier, e.g. binance."),
       symbol: z.string().describe("Trading pair from blackforge_symbols, e.g. BTCUSDT."),
@@ -107,16 +145,7 @@ server.registerTool(
   ({ exchange, symbol, columns }) =>
     respond(
       () => client.latest(exchange, symbol, columns),
-      (data, meta) => ({
-        exchange,
-        symbol,
-        ts: data.ts,
-        tsIso: data.ts ? new Date(data.ts).toISOString() : null,
-        valueCount: Object.keys(data.values).length,
-        values: data.values,
-        rowsRemaining: meta.rowsRemaining,
-        columnsOmitted: meta.columnsOmitted ?? [],
-      }),
+      (data, meta) => shapeLatest(data, meta, { exchange, symbol }),
     ),
 );
 
@@ -130,7 +159,10 @@ server.registerTool(
       "of { ts, value } where `ts` is epoch milliseconds and `value` is the measured number (or null). " +
       "`from`/`to` are ISO-8601 datetimes; `interval` is one of 5m, 1h, 1d (higher intervals may be " +
       "plan-gated). The server caps a response at 50,000 points. If the requested `metric` is above your " +
-      "plan, `points` comes back empty and the column is listed in `columnsOmitted` — that is why it is empty.",
+      "plan, `points` comes back empty and the column is listed in `columnsOmitted` — that is why it is empty. " +
+      "WHEN ANY BUCKET IS FLAGGED, a `qualitySummary` object reports how many of the buckets carry a " +
+      "quality flag and which flags they are (`{ flaggedBuckets, of, flags }`); per-bucket quality is " +
+      "deliberately not repeated on every point. No `qualitySummary` means no bucket in the range was flagged.",
     inputSchema: {
       exchange: z.string().describe("Venue identifier, e.g. binance."),
       symbol: z.string().describe("Trading pair, e.g. BTCUSDT."),
@@ -143,15 +175,12 @@ server.registerTool(
   ({ exchange, symbol, metric, from, to, interval }) =>
     respond(
       () => client.series({ exchange, symbol, metric, from, to, interval }),
-      (data, meta) => ({
-        exchange,
-        symbol,
-        metric,
-        interval,
-        pointCount: data.points.length,
-        points: data.points,
-        columnsOmitted: meta.columnsOmitted ?? [],
-      }),
+      async (data, meta) => {
+        // Only pay for the decode table when something is actually flagged.
+        const bits = anyFlagged(data.points) ? await qualityBits() : [];
+        const summary = summarizeQuality(data.points, bits);
+        return shapeSeries(data, meta, { exchange, symbol, metric, interval }, summary);
+      },
     ),
 );
 
@@ -169,7 +198,7 @@ server.registerTool(
   () =>
     respond(
       () => client.usage(),
-      (data) => ({ days: data.days, rowsRemaining: data.rowsRemaining }),
+      (data) => ({ ...data }),
     ),
 );
 

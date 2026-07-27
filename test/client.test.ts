@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BlackForgeClient } from "../src/client.js";
-import { BlackForgeApiError } from "../src/types.js";
+import { BlackForgeApiError, type QualityBit } from "../src/types.js";
+import {
+  anyFlagged,
+  decodeMask,
+  qualityNote,
+  shapeLatest,
+  shapeSeries,
+  summarizeQuality,
+} from "../src/shape.js";
 
 function mockFetch(
   body: unknown,
@@ -83,6 +91,248 @@ describe("BlackForgeClient — happy path shapes", () => {
     const client = new BlackForgeClient({ baseUrl: "http://x/api", apiKey: "bf_test" });
     const { data } = await client.usage();
     expect(data.rowsRemaining).toBe(42);
+  });
+});
+
+describe("BlackForgeClient — optional quality passthrough", () => {
+  it("latest carries a quality sibling through untouched when the API sends one", async () => {
+    const spy = mockFetch({
+      ts: 1785162300000,
+      values: { bestBid: 118240.1, qualityFlags: 6 },
+      quality: {
+        raw: 6,
+        all: 6,
+        flags: ["BOOK_DESYNCED", "BOOK_CROSSED"],
+        contaminates: ["bookMicro", "bookWalls", "orderLadders"],
+        observedAt: 1785162298412,
+      },
+    });
+    vi.stubGlobal("fetch", spy);
+    const client = new BlackForgeClient({ baseUrl: "http://x/api", apiKey: "bf_test" });
+    const { data } = await client.latest("binance", "BTCUSDT");
+    expect(data.quality?.flags).toEqual(["BOOK_DESYNCED", "BOOK_CROSSED"]);
+    expect(data.quality?.contaminates).toContain("orderLadders");
+  });
+
+  it("latest without quality leaves the field undefined (today's production shape)", async () => {
+    const spy = mockFetch({ ts: 1785162300000, values: { bestBid: 1 } });
+    vi.stubGlobal("fetch", spy);
+    const client = new BlackForgeClient({ baseUrl: "http://x/api", apiKey: "bf_test" });
+    const { data } = await client.latest("binance", "BTCUSDT");
+    expect(data.quality).toBeUndefined();
+  });
+
+  it("series points carry the per-point quality integers when present", async () => {
+    const spy = mockFetch({
+      metric: "upDepth30",
+      exchange: "binance",
+      symbol: "BTCUSDT",
+      points: [
+        { ts: 1785162300000, value: 123.4, quality: 0, qualityAll: 0 },
+        { ts: 1785162600000, value: 118.9, quality: 2049, qualityAll: 0 },
+      ],
+    });
+    vi.stubGlobal("fetch", spy);
+    const client = new BlackForgeClient({ baseUrl: "http://x/api", apiKey: "bf_test" });
+    const { data } = await client.series({
+      exchange: "binance",
+      symbol: "BTCUSDT",
+      metric: "upDepth30",
+      from: "2026-07-01T00:00:00Z",
+      to: "2026-07-02T00:00:00Z",
+      interval: "5m",
+    });
+    expect(data.points[1].quality).toBe(2049);
+    expect(data.points[1].qualityAll).toBe(0);
+  });
+});
+
+// The decode table always comes from the catalog. These fixtures stand in for it;
+// nothing in src/ may ever hardcode an equivalent.
+const BITS: QualityBit[] = [
+  { bit: 0, name: "BOOK_DESYNCED", contaminates: ["bookMicro"] },
+  { bit: 1, name: "BOOK_CROSSED" },
+  { bit: 11, name: "EVENTS_LOST" },
+];
+
+describe("quality decode + notes", () => {
+  it("decodes a mask into names from the catalog table", () => {
+    expect(decodeMask(3, BITS)).toEqual(["BOOK_DESYNCED", "BOOK_CROSSED"]);
+  });
+
+  it("falls back to the raw mask for a bit the table does not name", () => {
+    expect(decodeMask(4, BITS)).toEqual(["mask 4"]);
+    expect(decodeMask(2049, [])).toEqual(["mask 1", "mask 2048"]);
+  });
+
+  it("never reports the 32768 sentinel as a flag", () => {
+    expect(decodeMask(32768, BITS)).toEqual([]);
+    expect(anyFlagged([{ quality: 32768 }])).toBe(false);
+    expect(anyFlagged([{ quality: 1 }])).toBe(true);
+  });
+
+  it("qualityNote is undefined when quality is absent or clean", () => {
+    expect(qualityNote(undefined)).toBeUndefined();
+    expect(qualityNote({ raw: 0, all: 0, flags: [], contaminates: [] })).toBeUndefined();
+  });
+
+  it("qualityNote on 32768 says the row was not assessed, and does not warn", () => {
+    const note = qualityNote({ raw: 32768, all: 32768 })!;
+    expect(note).toContain("predates the quality rail");
+    expect(note).toContain("not assessed");
+    expect(note).toContain("unknown, not as bad");
+  });
+
+  it("qualityNote names the flags and the figures they affect", () => {
+    const note = qualityNote({
+      raw: 6,
+      all: 6,
+      flags: ["BOOK_DESYNCED", "BOOK_CROSSED"],
+      contaminates: ["bookMicro", "bookWalls", "orderLadders"],
+    })!;
+    expect(note).toContain("BOOK_DESYNCED, BOOK_CROSSED");
+    expect(note).toContain("bookMicro, bookWalls and orderLadders");
+  });
+});
+
+describe("summarizeQuality", () => {
+  it("counts flagged buckets per flag name", () => {
+    const points = [
+      { quality: 0 },
+      { quality: 1 },
+      { quality: 1 },
+      { quality: 2048 },
+      { quality: 0 },
+    ];
+    expect(summarizeQuality(points, BITS)).toEqual({
+      flaggedBuckets: 3,
+      of: 5,
+      flags: { BOOK_DESYNCED: 2, EVENTS_LOST: 1 },
+    });
+  });
+
+  it("is undefined when nothing is flagged, including an all-unknown archive", () => {
+    expect(summarizeQuality([{ quality: 0 }, { quality: 0 }], BITS)).toBeUndefined();
+    expect(summarizeQuality([{ quality: 32768 }, { quality: 32768 }], BITS)).toBeUndefined();
+    expect(summarizeQuality([], BITS)).toBeUndefined();
+  });
+
+  it("reports unassessed buckets alongside real flags, never as flags", () => {
+    const summary = summarizeQuality([{ quality: 1 }, { quality: 32768 }], BITS)!;
+    expect(summary.flaggedBuckets).toBe(1);
+    expect(summary.unassessedBuckets).toBe(1);
+    expect(Object.keys(summary.flags)).toEqual(["BOOK_DESYNCED"]);
+  });
+});
+
+describe("tool payload shaping", () => {
+  // THE regression guard: today's API sends no `quality`, so the payload must be
+  // exactly what it was before this field existed.
+  it("latest without quality is byte-identical to the pre-quality payload", () => {
+    const payload = shapeLatest(
+      { ts: 1785162300000, values: { bestBid: 1, upDepth30: null } },
+      { rowsRemaining: 42 },
+      { exchange: "binance", symbol: "BTCUSDT" },
+    );
+    expect(JSON.stringify(payload, null, 2)).toBe(
+      JSON.stringify(
+        {
+          exchange: "binance",
+          symbol: "BTCUSDT",
+          ts: 1785162300000,
+          values: { bestBid: 1, upDepth30: null },
+          tsIso: new Date(1785162300000).toISOString(),
+          valueCount: 2,
+          rowsRemaining: 42,
+          columnsOmitted: [],
+        },
+        null,
+        2,
+      ),
+    );
+  });
+
+  it("series without quality emits no qualitySummary and no per-point quality keys", () => {
+    const payload = shapeSeries(
+      {
+        metric: "upDepth30",
+        exchange: "binance",
+        symbol: "BTCUSDT",
+        points: [{ ts: 1, value: 2 }],
+      },
+      {},
+      { exchange: "binance", symbol: "BTCUSDT", metric: "upDepth30", interval: "5m" },
+      summarizeQuality([{}], []),
+    ) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("qualitySummary");
+    expect(JSON.stringify(payload)).not.toContain("quality");
+  });
+
+  it("latest adds qualityNote only when the row is flagged", () => {
+    const flagged = shapeLatest(
+      {
+        ts: 1785162300000,
+        values: { bestBid: 1 },
+        quality: { raw: 6, all: 6, flags: ["BOOK_DESYNCED"], contaminates: ["bookMicro"] },
+      },
+      {},
+      { exchange: "binance", symbol: "BTCUSDT" },
+    ) as Record<string, unknown>;
+    expect(flagged.qualityNote).toContain("BOOK_DESYNCED");
+    // the raw quality object survives the shaping untouched
+    expect(flagged.quality).toEqual({
+      raw: 6,
+      all: 6,
+      flags: ["BOOK_DESYNCED"],
+      contaminates: ["bookMicro"],
+    });
+
+    const clean = shapeLatest(
+      { ts: 1785162300000, values: { bestBid: 1 }, quality: { raw: 0, all: 0, flags: [] } },
+      {},
+      { exchange: "binance", symbol: "BTCUSDT" },
+    ) as Record<string, unknown>;
+    expect(clean).not.toHaveProperty("qualityNote");
+  });
+
+  it("series strips per-point quality but keeps every other point field", () => {
+    const payload = shapeSeries(
+      {
+        metric: "upDepth30",
+        exchange: "binance",
+        symbol: "BTCUSDT",
+        points: [
+          { ts: 1, value: 2, quality: 0, qualityAll: 0 },
+          { ts: 2, value: 3, quality: 2049, qualityAll: 0 },
+        ],
+      },
+      {},
+      { exchange: "binance", symbol: "BTCUSDT", metric: "upDepth30", interval: "5m" },
+      summarizeQuality([{ quality: 0 }, { quality: 2049 }], BITS),
+    ) as { points: unknown[]; qualitySummary: unknown };
+    expect(payload.points).toEqual([
+      { ts: 1, value: 2 },
+      { ts: 2, value: 3 },
+    ]);
+    expect(payload.qualitySummary).toEqual({
+      flaggedBuckets: 1,
+      of: 2,
+      flags: { BOOK_DESYNCED: 1, EVENTS_LOST: 1 },
+    });
+  });
+
+  it("an unknown sibling key from the API reaches the model instead of being dropped", () => {
+    const payload = shapeLatest(
+      {
+        ts: 1,
+        values: {},
+        // a field this client has never heard of
+        somethingNew: { hello: "world" },
+      } as never,
+      {},
+      { exchange: "binance", symbol: "BTCUSDT" },
+    ) as Record<string, unknown>;
+    expect(payload.somethingNew).toEqual({ hello: "world" });
   });
 });
 

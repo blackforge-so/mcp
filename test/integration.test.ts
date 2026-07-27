@@ -5,6 +5,7 @@
 // If the local API is not reachable, the data-dependent assertions are skipped
 // (the tool-listing / keyless-catalog assertions still run against the server).
 
+import { createServer, type Server } from "node:http";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -152,5 +153,200 @@ describe("stdio integration", () => {
     } finally {
       await client.close();
     }
+  });
+});
+
+// ── the quality surface, against a stub API ─────────────────────────────────
+// These run everywhere: a tiny in-process HTTP server stands in for /v1, so the
+// end-to-end tool payloads are asserted without a local BlackForge stack. The
+// first test is the one that matters most — today's API sends no `quality`, and
+// the tool output must be exactly what it was before the field existed.
+
+interface StubBodies {
+  latest?: unknown;
+  series?: unknown;
+  catalog?: unknown;
+}
+
+async function withStubApi(
+  bodies: StubBodies,
+  fn: (client: Client) => Promise<void>,
+): Promise<void> {
+  const catalog = bodies.catalog ?? {
+    venues: [],
+    metrics: [
+      {
+        key: "qualityFlags",
+        label: "Quality flags",
+        family: "quality",
+        unit: "bitmask",
+        quoteRelative: false,
+        nullable: false,
+        description: "",
+        howToRead: "",
+        minPlan: "free",
+        bits: [
+          { bit: 0, name: "BOOK_DESYNCED" },
+          { bit: 11, name: "EVENTS_LOST" },
+        ],
+      },
+    ],
+  };
+  const server: Server = createServer((req, res) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const body =
+      url.pathname.endsWith("/v1/latest")
+        ? bodies.latest
+        : url.pathname.endsWith("/v1/series")
+          ? bodies.series
+          : catalog;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(body ?? {}));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [distEntry],
+    env: {
+      PATH: process.env.PATH ?? "",
+      BLACKFORGE_BASE_URL: `http://127.0.0.1:${port}/api`,
+      BLACKFORGE_API_KEY: MAX_KEY,
+    },
+  });
+  const client = new Client({ name: "blackforge-test", version: "0.0.0" });
+  await client.connect(transport);
+  try {
+    await fn(client);
+  } finally {
+    await client.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function call(client: Client, name: string, args: Record<string, unknown>) {
+  const res = (await client.callTool({ name, arguments: args })) as {
+    content: Array<{ type: string; text?: string }>;
+    isError?: boolean;
+  };
+  expect(res.isError).toBeFalsy();
+  return JSON.parse(textOf(res)) as Record<string, unknown>;
+}
+
+const LATEST_ARGS = { exchange: "binance", symbol: "BTCUSDT" };
+const SERIES_ARGS = {
+  exchange: "binance",
+  symbol: "BTCUSDT",
+  metric: "upDepth30",
+  from: "2026-07-01T00:00:00Z",
+  to: "2026-07-01T01:00:00Z",
+  interval: "5m",
+};
+
+describe("quality surface (stub API)", () => {
+  it("no quality on the wire → the payload is exactly today's", async () => {
+    await withStubApi(
+      {
+        latest: { ts: 1785162300000, values: { bestBid: 118240.1 } },
+        series: {
+          metric: "upDepth30",
+          exchange: "binance",
+          symbol: "BTCUSDT",
+          points: [{ ts: 1785162300000, value: 123.4 }],
+        },
+      },
+      async (client) => {
+        const latest = await call(client, "blackforge_latest", LATEST_ARGS);
+        expect(latest).not.toHaveProperty("quality");
+        expect(latest).not.toHaveProperty("qualityNote");
+        expect(latest.values).toEqual({ bestBid: 118240.1 });
+
+        const series = await call(client, "blackforge_series", SERIES_ARGS);
+        expect(series).not.toHaveProperty("qualitySummary");
+        expect(series.points).toEqual([{ ts: 1785162300000, value: 123.4 }]);
+      },
+    );
+  });
+
+  it("a flagged latest row carries quality through and adds a readable note", async () => {
+    await withStubApi(
+      {
+        latest: {
+          ts: 1785162300000,
+          values: { bestBid: 118240.1, qualityFlags: 6 },
+          quality: {
+            raw: 6,
+            all: 6,
+            flags: ["BOOK_DESYNCED", "BOOK_CROSSED"],
+            contaminates: ["bookMicro", "bookWalls", "orderLadders"],
+            observedAt: 1785162298412,
+          },
+        },
+      },
+      async (client) => {
+        const latest = await call(client, "blackforge_latest", LATEST_ARGS);
+        expect(latest.quality).toMatchObject({ raw: 6, flags: ["BOOK_DESYNCED", "BOOK_CROSSED"] });
+        expect(String(latest.qualityNote)).toContain("BOOK_DESYNCED");
+        expect(String(latest.qualityNote)).toContain("orderLadders");
+      },
+    );
+  });
+
+  it("a 32768 row reads as unassessed, not as a warning", async () => {
+    await withStubApi(
+      {
+        latest: {
+          ts: 1785162300000,
+          values: { bestBid: 1 },
+          quality: { raw: 32768, all: 32768, flags: [], contaminates: [] },
+        },
+      },
+      async (client) => {
+        const latest = await call(client, "blackforge_latest", LATEST_ARGS);
+        expect(String(latest.qualityNote)).toContain("predates the quality rail");
+        expect(String(latest.qualityNote)).toContain("unknown, not as bad");
+      },
+    );
+  });
+
+  it("series aggregates per-point quality using the catalog bit names, and drops it from points", async () => {
+    await withStubApi(
+      {
+        series: {
+          metric: "upDepth30",
+          exchange: "binance",
+          symbol: "BTCUSDT",
+          points: [
+            { ts: 1, value: 1, quality: 0, qualityAll: 0 },
+            { ts: 2, value: 2, quality: 1, qualityAll: 0 },
+            { ts: 3, value: 3, quality: 2048, qualityAll: 0 },
+          ],
+        },
+      },
+      async (client) => {
+        const series = await call(client, "blackforge_series", SERIES_ARGS);
+        expect(series.qualitySummary).toEqual({
+          flaggedBuckets: 2,
+          of: 3,
+          flags: { BOOK_DESYNCED: 1, EVENTS_LOST: 1 },
+        });
+        expect(series.points).toEqual([
+          { ts: 1, value: 1 },
+          { ts: 2, value: 2 },
+          { ts: 3, value: 3 },
+        ]);
+      },
+    );
+  });
+
+  it("a new sibling key on the catalog reaches the model (no key allowlist)", async () => {
+    await withStubApi(
+      { catalog: { venues: [], metrics: [], somethingNew: { hello: "world" } } },
+      async (client) => {
+        const catalog = await call(client, "blackforge_catalog", {});
+        expect(catalog.somethingNew).toEqual({ hello: "world" });
+        expect(catalog.metricCount).toBe(0);
+      },
+    );
   });
 });

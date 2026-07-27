@@ -2,8 +2,8 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) stdio server that puts
 BlackForge market-data in your agent's hands. **The whole crypto market, in real time** —
-nine spot venues (binance, bitget, bybit, coinbase, gate, kraken, kucoin, mexc, okx),
-~13,800 pairs, up to 117 measurement columns per pair per closed 5-minute window.
+nine spot venues (binance, bitget, bybit, coinbase, gate, kraken, kucoin, mexc, okx) and
+every column it measures, per pair per closed 5-minute window.
 
 Every column is a **measurement with a definition** — order-book depth and shape, resting
 liquidity lifetimes, trade-explained vs book-implied volume, spreads, market-wide context —
@@ -39,7 +39,7 @@ tool works **without a key**, so you can verify the install before pasting one.
 
 | Tool | Returns |
 |------|---------|
-| `blackforge_catalog` | Every venue and every column definition (9 venues, 103 metrics). Keyless. **Call this first** to learn valid `exchange` and `metric` identifiers. |
+| `blackforge_catalog` | Every venue and every column definition — 9 venues, and `metricCount` is the live column count. Keyless. **Call this first** to learn valid `exchange` and `metric` identifiers. |
 | `blackforge_symbols` | The trading pairs a venue lists, e.g. `["BTCUSDT", …]`. |
 | `blackforge_latest` | The latest completed 5-minute window for one `(exchange, symbol)` — a `values` object of column → number, with epoch-ms `ts`. Pass `columns` to narrow it. |
 | `blackforge_series` | A time series for one column over a range: ascending `{ ts, value }` points at `5m`, `1h`, or `1d`. Capped at 50,000 points. |
@@ -50,6 +50,18 @@ API. When a column is dropped because your plan does not include it, the tool re
 it in `columnsOmitted` so the agent understands why a key is absent. Venue- or interval-level
 restrictions come back as a clear tool error carrying the HTTP status and the server's message
 (including the upgrade URL, verbatim).
+
+## Data quality
+
+When the API reports a row's measurement quality, `blackforge_latest` carries it through as a
+`quality` object (`flags` naming what went wrong in the window, `contaminates` listing which
+figures that makes unreliable) plus a plain-English `qualityNote`. `blackforge_series`
+aggregates it into one `qualitySummary` (`{ flaggedBuckets, of, flags }`) rather than repeating
+it on every point. Both keys are **omitted entirely** when nothing is flagged, and a
+`quality.raw` of `32768` means the row predates the quality rail and was never assessed —
+unknown, not bad. The flag decode table lives on the `qualityFlags` metric in
+`blackforge_catalog`, as a `bits` array; this server reads it from there and never carries a
+copy of its own.
 
 ## Configuration
 
