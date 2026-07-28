@@ -55,7 +55,7 @@ export class BlackForgeClient {
     if (!opts?.keyless && !this.apiKey) {
       throw new BlackForgeApiError(
         0,
-        "BLACKFORGE_API_KEY is not set. Get a key at app.blackforge.so → Keys, then set it in the server env.",
+        "BLACKFORGE_API_KEY is not set. Get a key at app.blackforge.so → API, then set it in the server env.",
       );
     }
 

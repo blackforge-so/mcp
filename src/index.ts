@@ -210,7 +210,7 @@ async function main() {
   if (!client.hasKey()) {
     process.stderr.write(
       "[blackforge-mcp] BLACKFORGE_API_KEY is not set. blackforge_catalog works without a key; " +
-        "all other tools need one. Get a key at app.blackforge.so → Keys.\n",
+        "all other tools need one. Get a key at app.blackforge.so → API.\n",
     );
   }
 

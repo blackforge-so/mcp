@@ -31,7 +31,7 @@ No install step — `npx -y @blackforge-so/mcp` fetches and runs the server on d
 
 ### Where to get a key
 
-Mint a key at **[app.blackforge.so → Keys](https://app.blackforge.so)**. The server never
+Mint a key at **[app.blackforge.so → API](https://app.blackforge.so/api)**. The server never
 creates keys; it reads `BLACKFORGE_API_KEY` from its environment. The `blackforge_catalog`
 tool works **without a key**, so you can verify the install before pasting one.
 
