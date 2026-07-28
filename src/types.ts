@@ -17,7 +17,7 @@ export interface QualityBit {
   name?: string;
   label?: string;
   description?: string;
-  /** Column families whose figures this flag makes unreliable. */
+  /** Column families whose figures this flag calls into question. */
   contaminates?: string[];
 }
 
@@ -61,7 +61,7 @@ export interface QualityAssessment {
   all: number;
   /** Decoded flag names, e.g. ["BOOK_DESYNCED"]. Server-provided. */
   flags?: string[];
-  /** Column families the flags make unreliable. Server-provided. */
+  /** Column families the flags call into question. Server-provided. */
   contaminates?: string[];
   observedAt?: number;
 }

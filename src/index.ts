@@ -129,7 +129,7 @@ server.registerTool(
       "pass a subset of column keys (from blackforge_catalog) to narrow the payload. Columns your plan " +
       "does not cover are dropped and reported in `columnsOmitted` so you can see why a key is absent. " +
       "WHEN PRESENT, a `quality` object reports the row's measurement quality — `flags` names what " +
-      "went wrong during the window and `contaminates` lists which figures that makes unreliable, " +
+      "went wrong during the window and `contaminates` lists which figures it flags, " +
       "with a plain-English `qualityNote` beside it. Read it before trusting an unusual value. " +
       "A `quality.raw` of 32768 means the row predates the quality rail and was never assessed — " +
       "that is unknown, not bad. When the key is absent, the row carries no quality assessment at all.",

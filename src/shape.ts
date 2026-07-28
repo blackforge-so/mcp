@@ -95,7 +95,7 @@ export function qualityNote(quality: QualityAssessment | undefined): string | un
   const parts = [`Quality flags on this window: ${names.join(", ")}.`];
   if (affected.length) {
     parts.push(
-      `That makes the ${joinWords(affected)} figures unreliable for this window; ` +
+      `That flags the ${joinWords(affected)} figures for this window; ` +
         "every other column in the row is unaffected.",
     );
   } else {

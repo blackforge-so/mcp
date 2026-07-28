@@ -55,7 +55,7 @@ restrictions come back as a clear tool error carrying the HTTP status and the se
 
 When the API reports a row's measurement quality, `blackforge_latest` carries it through as a
 `quality` object (`flags` naming what went wrong in the window, `contaminates` listing which
-figures that makes unreliable) plus a plain-English `qualityNote`. `blackforge_series`
+figures it flags) plus a plain-English `qualityNote`. `blackforge_series`
 aggregates it into one `qualitySummary` (`{ flaggedBuckets, of, flags }`) rather than repeating
 it on every point. Both keys are **omitted entirely** when nothing is flagged, and a
 `quality.raw` of `32768` means the row predates the quality rail and was never assessed —
