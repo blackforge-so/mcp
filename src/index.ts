@@ -17,9 +17,22 @@ import {
   shapeSeries,
   summarizeQuality,
 } from "./shape.js";
-import { BlackForgeApiError, type BlackForgeMeta, type QualityBit } from "./types.js";
+import {
+  CHART_META_KEY,
+  WIDGET_MIME_TYPE,
+  WIDGET_URI,
+  buildChartPayload,
+  findMetric,
+  widgetHtml,
+} from "./widget.js";
+import {
+  BlackForgeApiError,
+  type BlackForgeMeta,
+  type CatalogResponse,
+  type QualityBit,
+} from "./types.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 const client = new BlackForgeClient();
 
@@ -31,16 +44,26 @@ const server = new McpServer({ name: "blackforge", version: VERSION });
  * `shape` must SPREAD the raw payload and only ADD derived fields — never list
  * keys explicitly. An allowlist drops any new sibling key the API starts
  * sending before the model ever sees it.
+ *
+ * `sidecar` is the ONLY other channel, and it is strictly out-of-band: whatever
+ * it returns lands in the result's `_meta`, which is protocol metadata and is
+ * never handed to a model. `content[0].text` is identical with it and without
+ * it, so a host that renders widgets and one that does not put exactly the same
+ * bytes in front of the model. That is what keeps `cli/` and `skill/` — which
+ * read that text — unaffected by anything in this file.
  */
 async function respond<T>(
   run: () => Promise<Result<T>>,
   shape: (data: T, meta: BlackForgeMeta) => unknown | Promise<unknown>,
+  sidecar?: (data: T, meta: BlackForgeMeta) => Promise<Record<string, unknown> | undefined>,
 ) {
   try {
     const { data, meta } = await run();
     const payload = await shape(data, meta);
+    const extra = sidecar ? await sidecar(data, meta) : undefined;
     return {
       content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+      ...(extra ? { _meta: extra } : {}),
     };
   } catch (err) {
     const text =
@@ -52,24 +75,56 @@ async function respond<T>(
 }
 
 /**
- * The quality-flag decode table, read from the catalog and cached for the
- * process. Never hardcode a copy of it: a local mirror of this table has
- * already caused one production incident in this programme. On failure we fall
- * back to raw masks and let the next call retry.
+ * The catalog, fetched at most once per process.
+ *
+ * It carries two things this server cannot derive locally: the quality-flag
+ * decode table, and each metric's unit / family / label. Never hardcode a copy
+ * of the bit table — a local mirror of it has already caused one production
+ * incident in this programme. On failure we fall back to raw masks and let the
+ * next call retry.
  */
-let bitsPromise: Promise<QualityBit[]> | undefined;
-function qualityBits(): Promise<QualityBit[]> {
-  if (!bitsPromise) {
-    bitsPromise = client
+let catalogPromise: Promise<CatalogResponse | undefined> | undefined;
+function cachedCatalog(): Promise<CatalogResponse | undefined> {
+  if (!catalogPromise) {
+    catalogPromise = client
       .catalog()
-      .then(({ data }) => bitsFromCatalog(data))
+      .then(({ data }) => data)
       .catch(() => {
-        bitsPromise = undefined; // transient failure: allow a retry later
-        return [];
+        catalogPromise = undefined; // transient failure: allow a retry later
+        return undefined;
       });
   }
-  return bitsPromise;
+  return catalogPromise;
 }
+
+function qualityBits(): Promise<QualityBit[]> {
+  return cachedCatalog().then((catalog) => (catalog ? bitsFromCatalog(catalog) : []));
+}
+
+// ── the chart widget resource (MCP Apps) ─────────────────────────────────────
+// A `ui://` resource holding one self-contained HTML file. Hosts that
+// implement the `io.modelcontextprotocol/ui` extension fetch this when
+// blackforge_series is called and render it in a sandboxed iframe; every other
+// host ignores both this resource and the tool's `_meta.ui`, and sees the exact
+// same tool result it saw before.
+//
+// No `_meta.ui.csp` is declared, on purpose. The widget makes no network calls
+// — its data arrives on the tool result — so it needs neither `connectDomains`
+// nor `resourceDomains`, and it renders correctly under the deny-by-default
+// policy. Adding a CSP entry here would be widening the sandbox for nothing.
+server.registerResource(
+  "BlackForge series chart",
+  WIDGET_URI,
+  {
+    mimeType: WIDGET_MIME_TYPE,
+    description:
+      "Interactive chart for a blackforge_series result: one metric over time, with " +
+      "flagged buckets drawn in the same convention the BlackForge dashboard uses.",
+  },
+  async () => ({
+    contents: [{ uri: WIDGET_URI, mimeType: WIDGET_MIME_TYPE, text: await widgetHtml() }],
+  }),
+);
 
 // ── blackforge_catalog ───────────────────────────────────────────────────────
 server.registerTool(
@@ -163,6 +218,14 @@ server.registerTool(
       "WHEN ANY BUCKET IS FLAGGED, a `qualitySummary` object reports how many of the buckets carry a " +
       "quality flag and which flags they are (`{ flaggedBuckets, of, flags }`); per-bucket quality is " +
       "deliberately not repeated on every point. No `qualitySummary` means no bucket in the range was flagged.",
+    // MCP Apps: hosts that support the extension render the result as an
+    // interactive chart. Hosts that do not ignore this key entirely — it is
+    // metadata on the tool definition, not part of the input or output
+    // contract. Both spellings are set because older hosts read the flat one.
+    _meta: {
+      ui: { resourceUri: WIDGET_URI },
+      "ui/resourceUri": WIDGET_URI,
+    },
     inputSchema: {
       exchange: z.string().describe("Venue identifier, e.g. binance."),
       symbol: z.string().describe("Trading pair, e.g. BTCUSDT."),
@@ -180,6 +243,29 @@ server.registerTool(
         const bits = anyFlagged(data.points) ? await qualityBits() : [];
         const summary = summarizeQuality(data.points, bits);
         return shapeSeries(data, meta, { exchange, symbol, metric, interval }, summary);
+      },
+      // The widget sidecar. ALWAYS attached — never gate this on the client
+      // having announced `io.modelcontextprotocol/ui`. The official reference
+      // host declares no capabilities at all and still renders widgets, so a
+      // gate makes the chart silently empty there. Full reasoning in
+      // `widget.ts`. The cost is bounded by MAX_WIDGET_POINTS and lands in
+      // `_meta`, so it reaches no model.
+      async (data, meta) => {
+        // Unlike the summary above, the widget needs the table whenever it
+        // might dot something, and the catalog for the metric's unit + family.
+        const catalog = await cachedCatalog();
+        return {
+          [CHART_META_KEY]: buildChartPayload({
+            exchange,
+            symbol,
+            metric,
+            interval,
+            points: data.points,
+            meta: findMetric(catalog, metric),
+            bits: catalog ? bitsFromCatalog(catalog) : [],
+            columnsOmitted: meta.columnsOmitted ?? [],
+          }),
+        };
       },
     ),
 );

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BlackForge series</title>
+    <style>
+      /* Three layers, in this order, and the order is the point:
+           1. `:root` — light, the baseline.
+           2. `prefers-color-scheme` — what to do when the host sends no theme
+              at all. Without this the widget renders dark navy on a dark card.
+           3. `[data-theme]` — what the host explicitly asked for, via
+              applyDocumentTheme(). Declared in BOTH directions so it wins over
+              the media query either way. */
+      :root {
+        --fg: #0b1c2b;
+        --muted: rgba(11, 28, 43, 0.55);
+        --axis: rgba(11, 28, 43, 0.45);
+        --grid: rgba(11, 28, 43, 0.1);
+        --chip-flagged-bg: rgba(176, 122, 24, 0.12);
+        --chip-flagged-fg: #8a5f13;
+        --chip-unchecked-bg: rgba(100, 121, 141, 0.14);
+        --chip-unchecked-fg: #4c5b6b;
+        --stroke: #205278;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #e6edf3;
+          --muted: rgba(230, 237, 243, 0.6);
+          --axis: rgba(230, 237, 243, 0.5);
+          --grid: rgba(230, 237, 243, 0.12);
+          --stroke: #6aa9d6;
+          --chip-flagged-bg: rgba(214, 158, 46, 0.18);
+          --chip-flagged-fg: #e3b341;
+          --chip-unchecked-bg: rgba(139, 158, 178, 0.18);
+          --chip-unchecked-fg: #a9b6c4;
+          color-scheme: dark;
+        }
+      }
+      :root[data-theme="light"] {
+        --fg: #0b1c2b;
+        --muted: rgba(11, 28, 43, 0.55);
+        --axis: rgba(11, 28, 43, 0.45);
+        --grid: rgba(11, 28, 43, 0.1);
+        --stroke: #205278;
+        --chip-flagged-bg: rgba(176, 122, 24, 0.12);
+        --chip-flagged-fg: #8a5f13;
+        --chip-unchecked-bg: rgba(100, 121, 141, 0.14);
+        --chip-unchecked-fg: #4c5b6b;
+        color-scheme: light;
+      }
+      :root[data-theme="dark"] {
+        --fg: #e6edf3;
+        --muted: rgba(230, 237, 243, 0.6);
+        --axis: rgba(230, 237, 243, 0.5);
+        --grid: rgba(230, 237, 243, 0.12);
+        --stroke: #6aa9d6;
+        --chip-flagged-bg: rgba(214, 158, 46, 0.18);
+        --chip-flagged-fg: #e3b341;
+        --chip-unchecked-bg: rgba(139, 158, 178, 0.18);
+        --chip-unchecked-fg: #a9b6c4;
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: var(--fg);
+        background: transparent;
+        font:
+          13px/1.5 ui-sans-serif,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      #root {
+        padding: 4px 2px 8px;
+        max-width: 100%;
+      }
+      #title {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      #subtitle {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 1px;
+      }
+      #chart {
+        margin-top: 10px;
+        width: 100%;
+        min-height: 260px;
+      }
+      #readout {
+        min-height: 34px;
+        margin-top: 6px;
+        font-size: 12px;
+      }
+      .readout__line {
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .readout__time {
+        color: var(--muted);
+      }
+      .readout__value {
+        font-weight: 600;
+      }
+      .readout__note {
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      #chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .chip {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .chip--flagged {
+        background: var(--chip-flagged-bg);
+        color: var(--chip-flagged-fg);
+      }
+      .chip--unchecked {
+        background: var(--chip-unchecked-bg);
+        color: var(--chip-unchecked-fg);
+      }
+      #reasons {
+        margin: 6px 0 0;
+        padding-left: 16px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      #footer {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      /* uPlot ships light-mode defaults; the axis/grid strokes are set in JS,
+         but the cursor lines come from CSS. */
+      .u-cursor-x,
+      .u-cursor-y {
+        border-color: var(--grid) !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="title">Loading…</div>
+      <div id="subtitle"></div>
+      <div id="chart"></div>
+      <div id="readout"></div>
+      <div id="chips"></div>
+      <ul id="reasons"></ul>
+      <div id="footer"></div>
+    </div>
+    <script type="module" src="/src/chart.ts"></script>
+  </body>
+</html>

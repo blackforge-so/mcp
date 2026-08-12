@@ -51,6 +51,28 @@ it in `columnsOmitted` so the agent understands why a key is absent. Venue- or i
 restrictions come back as a clear tool error carrying the HTTP status and the server's message
 (including the upgrade URL, verbatim).
 
+## Charts
+
+`blackforge_series` also ships an interactive chart. A host that implements the
+[MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) extension
+(`io.modelcontextprotocol/ui`) renders the result as a line chart with flagged buckets drawn
+in the same convention the BlackForge console uses; every other host sees exactly the JSON it
+saw before.
+
+Nothing about the tool contract changes. The chart payload travels in the result's `_meta`,
+which is protocol metadata and reaches no model, so `content[0].text` is **byte-identical**
+whether or not your host renders widgets — the token cost of a series is the same either way.
+That is deliberate: `structuredContent` would have been the obvious home for it, but core MCP
+treats that field as server-produced result data, and a host without Apps support may hand it
+to the model, doubling the cost of a large series.
+
+The chart is one self-contained HTML file with uPlot and all CSS inlined, because MCP Apps
+render under a deny-by-default CSP where an external `<script>` would simply never load. It is
+read-only and never calls back into the server: it draws the points it was given and cannot
+spend your row quota behind your back. Series longer than 2,000 points are decimated **for the
+chart only** — the tool still returns every point — and the payload says so rather than
+quietly thinning the line.
+
 ## Data quality
 
 When the API reports a row's measurement quality, `blackforge_latest` carries it through as a
@@ -74,9 +96,13 @@ copy of its own.
 
 ```bash
 npm install
-npm run build     # → dist/index.js (ESM, executable)
+npm run build     # → dist/index.js (ESM, executable) + dist/widget/chart.html
 npm test          # client unit tests + a stdio integration test
 ```
+
+`build` runs tsup first and the widget's vite build second, and the order is load-bearing:
+tsup's `clean` wipes the whole of `dist/`, so reversing them deletes the widget and leaves the
+server serving a resource that is not there.
 
 The integration test spawns the built server over stdio and drives it with the MCP client.
 Its data assertions need a local BlackForge API at `http://localhost:3001/api`; without one,

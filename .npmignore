@@ -1,8 +1,10 @@
 src/
 test/
+widget/
 node_modules/
 tsconfig.json
 tsup.config.ts
 vitest.config.ts
+vite.widget.config.ts
 .gitignore
 *.log

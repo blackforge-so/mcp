@@ -171,6 +171,8 @@ interface StubBodies {
 async function withStubApi(
   bodies: StubBodies,
   fn: (client: Client) => Promise<void>,
+  /** Declared verbatim on the test client, to stand in for a widget-capable host. */
+  clientCapabilities?: Record<string, unknown>,
 ): Promise<void> {
   const catalog = bodies.catalog ?? {
     venues: [],
@@ -214,7 +216,10 @@ async function withStubApi(
       BLACKFORGE_API_KEY: MAX_KEY,
     },
   });
-  const client = new Client({ name: "blackforge-test", version: "0.0.0" });
+  const client = new Client(
+    { name: "blackforge-test", version: "0.0.0" },
+    clientCapabilities ? { capabilities: clientCapabilities } : undefined,
+  );
   await client.connect(transport);
   try {
     await fn(client);
@@ -347,6 +352,153 @@ describe("quality surface (stub API)", () => {
         expect(catalog.somethingNew).toEqual({ hello: "world" });
         expect(catalog.metricCount).toBe(0);
       },
+    );
+  });
+});
+
+// ── MCP Apps widget (stub API) ───────────────────────────────────────────────
+// The whole point of these: the widget is additive. A host that does not
+// implement the extension — which is every host `cli/` and `skill/` drive —
+// must see byte-for-byte the tool result it saw before the widget existed.
+
+const UI_CAPABILITY = {
+  extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } },
+};
+
+const SERIES_BODY = {
+  metric: "upDepth30",
+  exchange: "binance",
+  symbol: "BTCUSDT",
+  points: [
+    { ts: 1, value: 1, quality: 0, qualityAll: 0 },
+    { ts: 2, value: 2, quality: 1, qualityAll: 1 },
+  ],
+};
+
+/** `contents[]` is a text-or-blob union; the widget resource is always text. */
+async function readWidget(client: Client) {
+  const read = await client.readResource({ uri: "ui://blackforge/series-chart.html" });
+  const first = read.contents[0] as { mimeType?: string; text?: string };
+  return { mimeType: first?.mimeType, html: String(first?.text ?? "") };
+}
+
+async function rawSeries(client: Client) {
+  return (await client.callTool({ name: "blackforge_series", arguments: SERIES_ARGS })) as {
+    content: Array<{ type: string; text?: string }>;
+    _meta?: Record<string, unknown>;
+    structuredContent?: unknown;
+  };
+}
+
+describe("widget (stub API)", () => {
+  it("declares the ui:// resource with the MCP Apps mime type", async () => {
+    await withStubApi({}, async (client) => {
+      const { resources } = await client.listResources();
+      const widget = resources.find((r) => r.uri === "ui://blackforge/series-chart.html");
+
+      expect(widget).toBeDefined();
+      expect(widget?.mimeType).toBe("text/html;profile=mcp-app");
+    });
+  });
+
+  it("serves a self-contained HTML document with no external script or link", async () => {
+    await withStubApi({}, async (client) => {
+      const { mimeType, html } = await readWidget(client);
+
+      expect(mimeType).toBe("text/html;profile=mcp-app");
+      expect(html).toContain("<!doctype html>");
+      // Under the deny-by-default CSP an external asset would simply not load,
+      // so a src= or href= pointing off-document is a broken widget.
+      expect(html).not.toMatch(/<script[^>]+src=/i);
+      expect(html).not.toMatch(/<link[^>]+rel=["']?stylesheet/i);
+    });
+  });
+
+  it("ships no dev fixture in the built bundle", async () => {
+    // `widget/src/fixture.ts` is reachable only under `vite dev` and guarded by
+    // `import.meta.env.DEV`. If that guard ever stops eliminating the branch,
+    // a synthetic BTCUSDT series would ride along in the published package.
+    await withStubApi({}, async (client) => {
+      const { html } = await readWidget(client);
+      expect(html).not.toContain("__blackforge_dev_fixture__");
+    });
+  });
+
+  it("points blackforge_series at the widget without touching its input schema", async () => {
+    await withStubApi({}, async (client) => {
+      const { tools } = await client.listTools();
+      const series = tools.find((t) => t.name === "blackforge_series");
+      const meta = series?._meta as { ui?: { resourceUri?: string } } | undefined;
+
+      expect(meta?.ui?.resourceUri).toBe("ui://blackforge/series-chart.html");
+      expect(Object.keys(series?.inputSchema.properties ?? {}).sort()).toEqual([
+        "exchange",
+        "from",
+        "interval",
+        "metric",
+        "symbol",
+        "to",
+      ]);
+    });
+  });
+
+  it("attaches the payload even when the client announces NOTHING", async () => {
+    // Regression test for a real defect. This was gated on the client having
+    // negotiated `io.modelcontextprotocol/ui`; the official reference host
+    // (`ext-apps/examples/basic-host`) announces no capabilities at all, so it
+    // rendered the iframe and then showed "No chart data on this result".
+    await withStubApi({ series: SERIES_BODY }, async (client) => {
+      const res = await rawSeries(client);
+      expect(res._meta?.["so.blackforge/chart"]).toBeDefined();
+    });
+  });
+
+  it("puts the payload in _meta and leaves the model text identical either way", async () => {
+    let plain = "";
+    let plainMeta: unknown;
+    await withStubApi({ series: SERIES_BODY }, async (client) => {
+      const res = await rawSeries(client);
+      plain = textOf(res);
+      plainMeta = res._meta?.["so.blackforge/chart"];
+    });
+
+    await withStubApi(
+      { series: SERIES_BODY },
+      async (client) => {
+        const res = await rawSeries(client);
+
+        // THE contract: the bytes the model reads do not move, with or without
+        // the capability. This is what keeps `skill/` unaffected.
+        expect(textOf(res)).toBe(plain);
+        // And the payload rides out-of-band, never in structuredContent —
+        // core MCP treats that field as model-facing result data.
+        expect(res.structuredContent).toBeUndefined();
+
+        const chart = res._meta?.["so.blackforge/chart"] as Record<string, unknown>;
+        expect(chart).toEqual(plainMeta);
+        expect(chart).toMatchObject({ v: 1, exchange: "binance", symbol: "BTCUSDT" });
+        // Per-point quality is stripped from the model's copy but the widget
+        // needs it back, or it cannot draw a flagged bucket at all.
+        expect(chart.points).toEqual([
+          { t: 1, v: 1, q: 0, qa: 0 },
+          { t: 2, v: 2, q: 1, qa: 1 },
+        ]);
+      },
+      UI_CAPABILITY,
+    );
+  });
+
+  it("forwards the SERVED bit table rather than a local copy", async () => {
+    await withStubApi(
+      { series: SERIES_BODY },
+      async (client) => {
+        const res = await rawSeries(client);
+        const chart = res._meta?.["so.blackforge/chart"] as { bits: Array<{ name: string }> };
+
+        // Exactly the two bits the stub catalog serves — no more, no invented names.
+        expect(chart.bits.map((b) => b.name)).toEqual(["BOOK_DESYNCED", "EVENTS_LOST"]);
+      },
+      UI_CAPABILITY,
     );
   });
 });
