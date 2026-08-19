@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "so.blackforge/mcp",
+  "description": "Crypto market data: order book depth, liquidity lifetimes and taker flow on 9 spot venues",
+  "version": "0.2.0",
+  "websiteUrl": "https://blackforge.so",
+  "repository": {
+    "url": "https://github.com/blackforge-so/mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@blackforge-so/mcp",
+      "version": "0.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "BLACKFORGE_API_KEY",
+          "description": "BlackForge API key. Every tool except blackforge_catalog requires one.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "BLACKFORGE_BASE_URL",
+          "description": "API base URL. Defaults to https://api.blackforge.so.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
