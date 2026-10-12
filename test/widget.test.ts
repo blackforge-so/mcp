@@ -198,3 +198,10 @@ describe("vendored quality segmentation", () => {
     expect(split.solid.every((v) => v === null)).toBe(true);
   });
 });
+
+describe("widget value formatting (migration 008 unit)", () => {
+  it("labels basis points", async () => {
+    const { formatReadoutValue } = await import("../widget/src/format.js");
+    expect(formatReadoutValue(12.345, "bps")).toBe("12.35 bps");
+  });
+});

@@ -83,6 +83,8 @@ export function formatReadoutValue(value: number | null | undefined, unit: strin
       return groupedDecimals(value, 4);
     case "percent":
       return `${groupedDecimals(value, 2)}%`;
+    case "bps":
+      return `${groupedDecimals(value, 2)} bps`;
     case "bool":
       return value ? "yes" : "no";
     case "base":
