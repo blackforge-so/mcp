@@ -33,7 +33,7 @@ import {
   type QualityBit,
 } from "./types.js";
 
-const VERSION = "0.2.2";
+const VERSION = "0.3.0";
 
 const client = new BlackForgeClient();
 
