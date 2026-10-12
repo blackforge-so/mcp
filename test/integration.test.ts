@@ -55,15 +55,26 @@ describe("stdio integration", () => {
     apiUp = await localApiUp();
   });
 
-  it("lists all five tools", async () => {
+  it("lists every tool: the five history tools plus the live ones", async () => {
     const client = await makeClient(MAX_KEY);
     try {
       const { tools } = await client.listTools();
       const names = tools.map((t) => t.name).sort();
       expect(names).toEqual([
+        "blackforge_alert_create",
+        "blackforge_alert_delete",
+        "blackforge_alert_list",
+        "blackforge_book",
         "blackforge_catalog",
+        "blackforge_fill",
+        "blackforge_formula_create",
+        "blackforge_formula_delete",
+        "blackforge_formula_list",
+        "blackforge_formula_validate",
+        "blackforge_formula_watch",
         "blackforge_latest",
         "blackforge_series",
+        "blackforge_spread_map",
         "blackforge_symbols",
         "blackforge_usage",
       ]);

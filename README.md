@@ -51,6 +51,38 @@ it in `columnsOmitted` so the agent understands why a key is absent. Venue- or i
 restrictions come back as a clear tool error carrying the HTTP status and the server's message
 (including the upgrade URL, verbatim).
 
+## Live formulas and the live order book
+
+Beyond the 5-minute history, the server reaches BlackForge's realtime host. Write your own
+measure from order book and trade data across the major venues, stream it every second, and
+get notified when it crosses a value you choose.
+
+| Tool | Does | Plan |
+|------|------|------|
+| `blackforge_formula_validate` | Checks a formula without saving it. Free. A refusal comes back as data: a stable `code`, the location with a `pointer` under the source, and `suggestions` (e.g. the venue's real pair spelling), so an agent can fix it and check again. | Ultra |
+| `blackforge_formula_create` | Saves a formula (`name`, `expr`, `interval` 1 to 60 s). | Ultra |
+| `blackforge_formula_list` | Saved formulas, your limits and current usage. | Ultra |
+| `blackforge_formula_delete` | Deletes a formula and the notifications on it. | Ultra |
+| `blackforge_formula_watch` | Streams a saved formula (`formulaId`) or a one-off `expr` for up to 60 s (default 20) and returns first, last, min, max, the flags seen and the full series. | Ultra |
+| `blackforge_alert_create` | Notifies you when a formula crosses a value you set (`above`, `below`, `cross`), by email and optionally a signed `webhookUrl`. The webhook secret is shown once. | Ultra |
+| `blackforge_alert_list` / `blackforge_alert_delete` | List or delete notifications. | Ultra |
+| `blackforge_book` | The live order book for one pair, up to 200 levels a side. | Max, Ultra |
+| `blackforge_fill` | Prices a market order against the live book (`usd` or `size`); `bps` is null unless the visible book fills it all. | Max, Ultra |
+| `blackforge_spread_map` | Best bid and ask for one base/quote on every venue that lists it, read in the same moment. | Max, Ultra |
+
+A formula looks like `mid(binance:BTCUSDT) - mid(okx:BTC-USDT)` or
+`buyVol(binance:SOLUSDT, 60s) / max(sellVol(binance:SOLUSDT, 60s), 1)`. Pairs are spelled
+exactly as `blackforge_symbols` lists them. The full function list is in the
+`blackforge_formula_validate` tool description. Streaming and notifications are charged one
+row per referenced pair per evaluation; live book reads by levels returned or walked, against
+the same monthly quota as everything else. Every streamed value carries `flags` (for example
+`WARMING` while a windowed term has not filled its window yet) and `null` means there was no
+number, never zero.
+
+The stream uses Node's built-in WebSocket, so `blackforge_formula_watch` needs **Node 22 or
+newer**; every other tool runs on Node 20. Your key travels in the `x-api-key` header, never
+in a URL.
+
 ## Charts
 
 `blackforge_series` also ships an interactive chart. A host that implements the
@@ -91,6 +123,7 @@ copy of its own.
 |---------|---------|---------|
 | `BLACKFORGE_API_KEY` | *(none)* | Your key. Required for every tool except `blackforge_catalog`. |
 | `BLACKFORGE_BASE_URL` | `https://api.blackforge.so` | API base. Paths are appended as `/v1/...`. Override for a self-hosted or local dev API (e.g. `http://localhost:3001/api`). |
+| `BLACKFORGE_REALTIME_URL` | `https://realtime.blackforge.so` | Realtime host for the live formula stream and the live order book reads. |
 
 ## Local development
 

@@ -29,6 +29,12 @@
           "description": "API base URL. Defaults to https://api.blackforge.so.",
           "isRequired": false,
           "isSecret": false
+        },
+        {
+          "name": "BLACKFORGE_REALTIME_URL",
+          "description": "Realtime host for live formulas and live order book reads. Defaults to https://realtime.blackforge.so.",
+          "isRequired": false,
+          "isSecret": false
         }
       ]
     }

@@ -9,6 +9,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { BlackForgeClient, type Result } from "./client.js";
+import { registerRealtimeTools } from "./realtime-tools.js";
 import {
   anyFlagged,
   bitsFromCatalog,
@@ -37,6 +38,9 @@ const VERSION = "0.2.2";
 const client = new BlackForgeClient();
 
 const server = new McpServer({ name: "blackforge", version: VERSION });
+
+/** The five /v1 history tools only read. They reach the network, so openWorldHint. */
+const HISTORY_READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true } as const;
 
 /**
  * Wrap a client call: return compact JSON text, translate errors into tool errors.
@@ -131,6 +135,7 @@ server.registerTool(
   "blackforge_catalog",
   {
     title: "BlackForge catalog",
+    annotations: HISTORY_READ,
     description:
       "List every venue BlackForge covers (9 spot exchanges) and every column it measures " +
       "(one wide row per (exchange, symbol) per 5-minute window: order-book depth and " +
@@ -154,6 +159,7 @@ server.registerTool(
   "blackforge_symbols",
   {
     title: "BlackForge symbols",
+    annotations: HISTORY_READ,
     description:
       "List the trading pairs (symbols) a given venue trades, as an array of symbol strings. " +
       "Use these values as the `symbol` argument to blackforge_latest and blackforge_series. " +
@@ -177,16 +183,17 @@ server.registerTool(
   "blackforge_latest",
   {
     title: "BlackForge latest bucket",
+    annotations: HISTORY_READ,
     description:
       "Return the latest completed 5-minute window for one (exchange, symbol): a `values` object " +
       "mapping each column key to its measured number (or null when not observed), plus the window " +
       "timestamp `ts` in epoch milliseconds. Omit `columns` to get every column your plan includes; " +
       "pass a subset of column keys (from blackforge_catalog) to narrow the payload. Columns your plan " +
       "does not cover are dropped and reported in `columnsOmitted` so you can see why a key is absent. " +
-      "WHEN PRESENT, a `quality` object reports the row's measurement quality — `flags` names what " +
+      "WHEN PRESENT, a `quality` object reports the row's measurement quality: `flags` names what " +
       "went wrong during the window and `contaminates` lists which figures it flags, " +
       "with a plain-English `qualityNote` beside it. Read it before trusting an unusual value. " +
-      "A `quality.raw` of 32768 means the row predates the quality rail and was never assessed — " +
+      "A `quality.raw` of 32768 means the row predates the quality rail and was never assessed; " +
       "that is unknown, not bad. When the key is absent, the row carries no quality assessment at all.",
     inputSchema: {
       exchange: z.string().describe("Venue identifier, e.g. binance."),
@@ -209,12 +216,13 @@ server.registerTool(
   "blackforge_series",
   {
     title: "BlackForge time series",
+    annotations: HISTORY_READ,
     description:
       "Return a time series for one column of one (exchange, symbol): `points` is an ascending array " +
       "of { ts, value } where `ts` is epoch milliseconds and `value` is the measured number (or null). " +
       "`from`/`to` are ISO-8601 datetimes; `interval` is one of 5m, 1h, 1d (higher intervals may be " +
       "plan-gated). The server caps a response at 50,000 points. If the requested `metric` is above your " +
-      "plan, `points` comes back empty and the column is listed in `columnsOmitted` — that is why it is empty. " +
+      "plan, `points` comes back empty and the column is listed in `columnsOmitted`, which is why it is empty. " +
       "WHEN ANY BUCKET IS FLAGGED, a `qualitySummary` object reports how many of the buckets carry a " +
       "quality flag and which flags they are (`{ flaggedBuckets, of, flags }`); per-bucket quality is " +
       "deliberately not repeated on every point. No `qualitySummary` means no bucket in the range was flagged.",
@@ -275,6 +283,7 @@ server.registerTool(
   "blackforge_usage",
   {
     title: "BlackForge usage",
+    annotations: HISTORY_READ,
     description:
       "Report the calling key's recent usage: `days` is a per-day breakdown of request counts and the " +
       "last request time, and `rowsRemaining` is the monthly row quota still available (omitted for " +
@@ -287,6 +296,9 @@ server.registerTool(
       (data) => ({ ...data }),
     ),
 );
+
+// ── live formulas, notifications and live order book reads ──────────────────
+registerRealtimeTools(server);
 
 // ── boot ─────────────────────────────────────────────────────────────────────
 async function main() {
