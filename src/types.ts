@@ -34,6 +34,10 @@ export interface CatalogMetric {
   minPlan: string;
   /** Only on the `qualityFlags` metric: the 16-bit decode table. */
   bits?: QualityBit[];
+  /** Series intervals the metric is served at, e.g. ["1m", "5m", "1h", "1d"]. */
+  intervals?: string[];
+  /** Present where the 5m/1h/1d value is a rollup of minute values: how it is rolled up. */
+  rollupNote?: string;
 }
 
 export interface CatalogVenue {
@@ -44,6 +48,8 @@ export interface CatalogVenue {
 export interface CatalogResponse {
   venues: CatalogVenue[];
   metrics: CatalogMetric[];
+  /** When the one-minute rows start (ISO), null before the switch. */
+  availableFrom?: { "1m": string | null };
 }
 
 /**
@@ -66,7 +72,7 @@ export interface QualityAssessment {
   observedAt?: number;
 }
 
-/** Latest completed 5-minute window for one (exchange, symbol). `ts` is epoch ms (0 if none). */
+/** Latest completed bucket (1m on Ultra/PAYG, 5m otherwise) for one (exchange, symbol). `ts` is epoch ms (0 if none). */
 export interface LatestResponse {
   ts: number;
   values: Record<string, number | null>;
@@ -88,6 +94,8 @@ export interface SeriesResponse {
   exchange: string;
   symbol: string;
   points: SeriesPoint[];
+  /** True when the range held more buckets than one response carries; the newest are returned. */
+  truncated?: boolean;
 }
 
 export interface UsageDay {

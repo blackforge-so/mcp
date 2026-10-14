@@ -130,7 +130,8 @@ app.onhostcontextchanged = (ctx) => {
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("fixture")) {
   void import("./fixture.js").then(({ devFixture, FIXTURE_MARKER }) => {
     document.documentElement.dataset.fixture = FIXTURE_MARKER;
-    current = devFixture() as WidgetPayload;
+    const asked = new URLSearchParams(location.search).get("fixture");
+    current = devFixture(asked === "1m" ? "1m" : "5m") as WidgetPayload;
     render(current);
   });
 } else {

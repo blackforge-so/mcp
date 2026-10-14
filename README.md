@@ -3,7 +3,8 @@
 A [Model Context Protocol](https://modelcontextprotocol.io) stdio server that puts
 BlackForge market-data in your agent's hands. **The whole crypto market, in real time** —
 nine spot venues (binance, bitget, bybit, coinbase, gate, kraken, kucoin, mexc, okx) and
-every column it measures, per pair per closed 5-minute window.
+every column it measures, per pair per closed minute (1m on Ultra and PAYG; 5m, 1h and 1d
+rollups for every plan).
 
 Every column is a **measurement with a definition** — order-book depth and shape, resting
 liquidity lifetimes, trade-explained vs book-implied volume, spreads, market-wide context —
@@ -41,8 +42,8 @@ tool works **without a key**, so you can verify the install before pasting one.
 |------|---------|
 | `blackforge_catalog` | Every venue and every column definition — 9 venues, and `metricCount` is the live column count. Keyless. **Call this first** to learn valid `exchange` and `metric` identifiers. |
 | `blackforge_symbols` | The trading pairs a venue lists, e.g. `["BTCUSDT", …]`. |
-| `blackforge_latest` | The latest completed 5-minute window for one `(exchange, symbol)` — a `values` object of column → number, with epoch-ms `ts`. Pass `columns` to narrow it. |
-| `blackforge_series` | A time series for one column over a range: ascending `{ ts, value }` points at `5m`, `1h`, or `1d`. Capped at 50,000 points. |
+| `blackforge_latest` | The latest completed bucket for one `(exchange, symbol)` at the plan's interval (1 minute on Ultra and PAYG, 5 minutes otherwise) — a `values` object of column → number, with epoch-ms `ts`. Pass `columns` to narrow it. |
+| `blackforge_series` | A time series for one column over a range: ascending `{ ts, value }` points at `1m` (Ultra and PAYG), `5m`, `1h`, or `1d`. Capped at 50,000 points, newest kept, `truncated: true` when cut. One-minute rows start at the switch to one-minute rows (`availableFrom` in the catalog); `5m` covers all history. |
 | `blackforge_usage` | The key's recent request counts and remaining monthly row quota. |
 
 Plan entitlements (which venues, columns, and intervals a key may read) are enforced by the
@@ -53,7 +54,7 @@ restrictions come back as a clear tool error carrying the HTTP status and the se
 
 ## Live formulas and the live order book
 
-Beyond the 5-minute history, the server reaches BlackForge's realtime host. Write your own
+Beyond the stored history, the server reaches BlackForge's realtime host. Write your own
 measure from order book and trade data across the major venues, stream it every second, and
 get notified when it crosses a value you choose.
 

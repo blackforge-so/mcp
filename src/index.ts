@@ -2,7 +2,8 @@
 // BlackForge MCP server — the whole crypto market, in real time.
 // A thin stdio server exposing the BlackForge /v1 market-data API as MCP tools.
 // Every tool returns raw measurements over 9 spot venues, one wide row per
-// (exchange, symbol) per 5-minute window; blackforge_catalog lists the exact
+// (exchange, symbol) per minute (served as 1m on Ultra/PAYG, 5m/1h/1d rollups
+// for everyone); blackforge_catalog lists the exact
 // column set. This is market-data, not advice.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -138,11 +139,13 @@ server.registerTool(
     annotations: HISTORY_READ,
     description:
       "List every venue BlackForge covers (9 spot exchanges) and every column it measures " +
-      "(one wide row per (exchange, symbol) per 5-minute window: order-book depth and " +
+      "(one wide row per (exchange, symbol) per minute, served at 1m, 5m, 1h and 1d: order-book depth and " +
       "shape, resting-liquidity lifetimes, trade-explained vs book-implied volume, spreads, " +
       "and market-wide context). `metricCount` is the exact number of columns available now. " +
       "Each metric carries a precise measurement definition, unit, family, and the minimum " +
-      "plan that includes it; the `qualityFlags` metric also carries the `bits` table that " +
+      "plan that includes it, the `intervals` it is served at, and, where the 5m/1h/1d value is a rollup " +
+      "of minute values rather than a re-measurement, a one-sentence `rollupNote`. `availableFrom[\"1m\"]` " +
+      "is when the one-minute rows start (null before). The `qualityFlags` metric also carries the `bits` table that " +
       "decodes the per-row quality mask. This route needs no API key. " +
       "CALL THIS FIRST to learn the exact `exchange` and `metric` identifiers the other tools accept.",
     inputSchema: {},
@@ -185,9 +188,10 @@ server.registerTool(
     title: "BlackForge latest bucket",
     annotations: HISTORY_READ,
     description:
-      "Return the latest completed 5-minute window for one (exchange, symbol): a `values` object " +
+      "Return the latest completed bucket for one (exchange, symbol), at the key plan's interval " +
+      "(1 minute on Ultra and PAYG, 5 minutes otherwise): a `values` object " +
       "mapping each column key to its measured number (or null when not observed), plus the window " +
-      "timestamp `ts` in epoch milliseconds. Omit `columns` to get every column your plan includes; " +
+      "END timestamp `ts` in epoch milliseconds. Omit `columns` to get every column your plan includes; " +
       "pass a subset of column keys (from blackforge_catalog) to narrow the payload. Columns your plan " +
       "does not cover are dropped and reported in `columnsOmitted` so you can see why a key is absent. " +
       "WHEN PRESENT, a `quality` object reports the row's measurement quality: `flags` names what " +
@@ -220,8 +224,12 @@ server.registerTool(
     description:
       "Return a time series for one column of one (exchange, symbol): `points` is an ascending array " +
       "of { ts, value } where `ts` is epoch milliseconds and `value` is the measured number (or null). " +
-      "`from`/`to` are ISO-8601 datetimes; `interval` is one of 5m, 1h, 1d (higher intervals may be " +
-      "plan-gated). The server caps a response at 50,000 points. If the requested `metric` is above your " +
+      "`from`/`to` are ISO-8601 datetimes; `interval` is one of 1m, 5m, 1h, 1d. 1m is on Ultra and PAYG " +
+      "(PAYG bills a 1m row at five times a 5m row); Max and below go down to 5m, and a finer interval than " +
+      "the plan allows is a 403. 1m rows exist only from the switch to one-minute rows on (see " +
+      "blackforge_catalog `availableFrom`); for earlier ranges use 5m, which covers all history. The server " +
+      "caps a response at 50,000 points (about 34 days at 1m) and keeps the NEWEST; `truncated: true` " +
+      "says the range was cut, so narrow it or use a coarser interval. If the requested `metric` is above your " +
       "plan, `points` comes back empty and the column is listed in `columnsOmitted`, which is why it is empty. " +
       "WHEN ANY BUCKET IS FLAGGED, a `qualitySummary` object reports how many of the buckets carry a " +
       "quality flag and which flags they are (`{ flaggedBuckets, of, flags }`); per-bucket quality is " +
@@ -240,7 +248,9 @@ server.registerTool(
       metric: z.string().describe("Column key from blackforge_catalog, e.g. spreadMean."),
       from: z.string().describe("Start datetime, ISO-8601, e.g. 2026-07-01T00:00:00Z."),
       to: z.string().describe("End datetime, ISO-8601, e.g. 2026-07-02T00:00:00Z."),
-      interval: z.enum(["5m", "1h", "1d"]).describe("Bucket size: 5m, 1h, or 1d."),
+      interval: z
+        .enum(["1m", "5m", "1h", "1d"])
+        .describe("Bucket size: 1m (Ultra and PAYG), 5m, 1h, or 1d."),
     },
   },
   ({ exchange, symbol, metric, from, to, interval }) =>

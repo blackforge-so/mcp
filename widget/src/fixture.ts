@@ -8,19 +8,20 @@
 export const FIXTURE_MARKER = "__blackforge_dev_fixture__";
 
 /**
- * One day of 5-minute buckets covering every state the chart must draw:
+ * One series covering every state the chart must draw (288 buckets: a day at
+ * `5m`, the default, or nearly five hours at `1m` via `?fixture=1m`):
  * a clean run, a flagged run, a gap with no rows, an unassessed run (the
  * pre-quality-rail archive), and a two-bucket clean island between two flagged
  * runs — the case `splitForDash` has a special rule for.
  */
-export function devFixture() {
+export function devFixture(interval: "1m" | "5m" = "5m") {
   const BOOK_DESYNCED = 2;
   const QUALITY_UNKNOWN = 32768;
   const start = Date.UTC(2026, 6, 1);
   const count = 288;
 
   const points = Array.from({ length: count }, (_, i) => {
-    const t = start + i * 5 * 60 * 1000;
+    const t = start + i * (interval === "1m" ? 1 : 5) * 60 * 1000;
     // A wandering spread, in percent, with a visible excursion under the flags.
     const base = 0.04 + Math.sin(i / 18) * 0.012 + Math.sin(i / 5) * 0.004;
     const v = i >= 96 && i < 132 ? base + 0.03 : base;
@@ -37,7 +38,7 @@ export function devFixture() {
     exchange: "binance",
     symbol: "BTCUSDT",
     metric: "spreadMean",
-    interval: "5m",
+    interval,
     label: "Mean spread",
     unit: "percent",
     family: "bookMicro",

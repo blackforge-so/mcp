@@ -450,6 +450,8 @@ describe("widget (stub API)", () => {
         "symbol",
         "to",
       ]);
+      const interval = (series?.inputSchema.properties as Record<string, { enum?: string[] }>).interval;
+      expect(interval.enum).toEqual(["1m", "5m", "1h", "1d"]);
     });
   });
 

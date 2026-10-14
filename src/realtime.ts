@@ -81,7 +81,7 @@ export function formatFormulaError(e: FormulaError): string {
 function planMessage(ctx: RealtimeContext, upgrade: string | undefined): string {
   const url = upgrade || PRICING_URL;
   return ctx === "formula"
-    ? `Live formulas and notifications are part of the Ultra plan, and this key's plan does not include them. Upgrade at ${url}. The 5-minute history (blackforge_latest, blackforge_series) stays available on the current plan.`
+    ? `Live formulas and notifications are part of the Ultra plan, and this key's plan does not include them. Upgrade at ${url}. The stored history (blackforge_latest, blackforge_series) stays available on the current plan.`
     : `Live order book reads (book, fill, spread map) need the Max or Ultra plan, and this key's plan does not include them. Upgrade at ${url}.`;
 }
 
