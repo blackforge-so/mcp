@@ -14,7 +14,7 @@ const FORMULA_LANGUAGE =
   "A formula is an arithmetic expression over live order book and trade data, evaluated server-side every " +
   "interval (default 1 s). Pairs are written venue:SYMBOL exactly as blackforge_symbols spells them " +
   "(binance:BTCUSDT, okx:BTC-USDT, coinbase:BTC-USD), and one formula may combine pairs on different venues. " +
-  "Durations are 1s to 300s, or 1m to 5m. " +
+  "Durations are 1s to 60s, or 1m. " +
   "Book state, read now: bid ask bidQty askQty mid spread spreadBps bidLevels askLevels quoteUsd last lastAge, each (pair). " +
   "Book walk: bidDepth askDepth imbalance (pair, bps) with bps an integer 1 to 200 written as a number; " +
   "buyCost sellCost (pair, usd) with usd 100 to 1000000, result in bps. " +
@@ -26,9 +26,9 @@ const FORMULA_LANGUAGE =
   "Scalar: abs sign sqrt ln log10 exp pow min max clamp round floor ceil if coalesce. " +
   "Windows over any expression: avgOver minOver maxOver stdOver change pctChange (expr, duration). " +
   "Operators + - * / ^, comparisons, and, or, not. A missing input gives null, never a made-up number. " +
-  "The sum of windows on any path (the horizon) is at most 300 s. " +
+  "The sum of windows on any path (the horizon) is at most 60 s. " +
   "Examples: mid(binance:BTCUSDT) - mid(okx:BTC-USDT); imbalance(binance:ETHUSDT, 50); " +
-  "buyVol(binance:SOLUSDT, 60s) / max(sellVol(binance:SOLUSDT, 60s), 1); avgOver(spreadBps(kraken:XBTUSD), 2m).";
+  "buyVol(binance:SOLUSDT, 60s) / max(sellVol(binance:SOLUSDT, 60s), 1); avgOver(spreadBps(kraken:XBTUSD), 1m).";
 
 const ULTRA_NOTE = "Live formulas and notifications are part of the Ultra plan.";
 const SNAPSHOT_NOTE = "Live order book reads need the Max or Ultra plan and are charged against the monthly row quota.";

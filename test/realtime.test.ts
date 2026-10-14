@@ -241,6 +241,38 @@ describe("the stream", () => {
     expect(err.message).toContain("maximum number of live formulas");
   });
 
+  it("formula_invalid (saved under the old 300 s limit) rejects with the checker's located error", async () => {
+    const error = {
+      code: "window_out_of_range",
+      message: "windows run from 1s to 60s (1m); this one is 300s",
+      at: { offset: 24, line: 1, column: 25, length: 4 },
+      source: "buyVol(binance:BTCUSDT, 300s)",
+      pointer: "                        ^^^^",
+      suggestions: ["60s"],
+      expected: null,
+      docs: "https://blackforge.so/docs/formulas#window_out_of_range",
+    };
+    const rt = await client(
+      () => undefined,
+      (conn, msg) => {
+        if (msg?.op === "subscribe")
+          conn.send({
+            type: "error",
+            id: msg.id,
+            code: "formula_invalid",
+            formula: "fml_1",
+            message: "Formula fml_1 no longer passes the formula check: windows run from 1s to 60s (1m); this one is 300s. Create it again within the current limits.",
+            error,
+          });
+      },
+    );
+    const err = (await rt.watch("fml_1", 5).catch((e) => e)) as RealtimeApiError;
+    expect(err.code).toBe("formula_invalid");
+    expect(err.formulaError).toEqual(error);
+    expect(err.message).toContain("no longer passes the formula check");
+    expect(err.message).toContain("Suggestions: 60s");
+  });
+
   it("a refused upgrade rejects with a message that points at the key and plan", async () => {
     const rt = await client(() => undefined, undefined, { rejectWs: 401 });
     const err = (await rt.watch("fml_1", 5).catch((e) => e)) as Error;

@@ -524,10 +524,15 @@ export class RealtimeClient {
             if (msg.id === undefined || msg.id === "w1") {
               const code = typeof msg.code === "string" ? msg.code : "error";
               const known = streamErrorMessage(code);
+              // formula_invalid: a saved formula that no longer passes the language's limits
+              // (e.g. a window over 60 s); the relay sends the checker's located error.
+              const formulaError = code === "formula_invalid" && isFormulaError(msg.error) ? msg.error : undefined;
+              const text = known ?? (typeof msg.message === "string" ? msg.message : "subscribe refused");
               finish(
-                new RealtimeApiError(0, `${code}: ${known ?? (typeof msg.message === "string" ? msg.message : "subscribe refused")}`, {
+                new RealtimeApiError(0, formulaError ? `${code}: ${text}\n${formatFormulaError(formulaError)}` : `${code}: ${text}`, {
                   code,
                   body: msg,
+                  formulaError,
                 }),
               );
             }
