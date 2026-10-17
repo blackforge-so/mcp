@@ -54,7 +54,10 @@ export function decodeMask(mask: number, bits: QualityBit[]): string[] {
     if (m !== undefined && name) byMask.set(m, name);
   }
   const out: string[] = [];
-  for (let i = 0; i < 16; i += 1) {
+  // Bits 0-30: the column is UInt32 and bit 31 is never used (a JS shift would go negative).
+  // The table grew past 16 bits (16 NEAR_DEPTH_PARTIAL, 17 BOOK_EMPTY_AT_VENUE, 18
+  // TRADES_BACKFILLED); a fixed 16 silently dropped every bit above 15.
+  for (let i = 0; i < 31; i += 1) {
     const bitMask = 1 << i;
     if (bitMask === QUALITY_UNKNOWN) continue;
     if ((mask & bitMask) === 0) continue;
