@@ -38,6 +38,8 @@ export interface CatalogMetric {
   intervals?: string[];
   /** Present where the 5m/1h/1d value is a rollup of minute values: how it is rolled up. */
   rollupNote?: string;
+  /** Present on the order book columns: when the book behind the value was read. */
+  bookTimingNote?: string;
 }
 
 export interface CatalogVenue {
@@ -49,7 +51,11 @@ export interface CatalogResponse {
   venues: CatalogVenue[];
   metrics: CatalogMetric[];
   /** When the one-minute rows start (ISO), null before the switch. */
-  availableFrom?: { "1m": string | null };
+  availableFrom?: {
+    "1m": string | null;
+    /** Per venue, the first window end read from the book as it stood then (ISO), null before. */
+    bookOnBoundary?: Record<string, string | null>;
+  };
 }
 
 /**

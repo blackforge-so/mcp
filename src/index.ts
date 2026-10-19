@@ -145,7 +145,10 @@ server.registerTool(
       "Each metric carries a precise measurement definition, unit, family, and the minimum " +
       "plan that includes it, the `intervals` it is served at, and, where the 5m/1h/1d value is a rollup " +
       "of minute values rather than a re-measurement, a one-sentence `rollupNote`. `availableFrom[\"1m\"]` " +
-      "is when the one-minute rows start (null before). The `qualityFlags` metric also carries the `bits` table that " +
+      "is when the one-minute rows start (null before). `availableFrom.bookOnBoundary` maps each venue to the first " +
+      "window end whose order book was read as it stood at that instant (such rows have `bookObservedAt` equal to `ts`, " +
+      "so venues line up), null before; the order book columns carry a one-sentence `bookTimingNote` on it. " +
+      "The `qualityFlags` metric also carries the `bits` table that " +
       "decodes the per-row quality mask. This route needs no API key. " +
       "CALL THIS FIRST to learn the exact `exchange` and `metric` identifiers the other tools accept.",
     inputSchema: {},
