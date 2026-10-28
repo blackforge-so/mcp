@@ -1,6 +1,6 @@
 {
   "name": "@blackforge-so/mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "//mcpName": "Ownership proof for the official MCP Registry: it reads this field from the PUBLISHED package and requires it to equal server.json's `name`. The two must be changed together.",
   "mcpName": "so.blackforge/mcp",
   "description": "Model Context Protocol server for BlackForge: the whole crypto market, in real time. Wraps the BlackForge /v1 market-data API as MCP tools.",
