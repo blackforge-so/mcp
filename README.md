@@ -28,7 +28,7 @@ Add the server to your MCP client and paste an API key. **Claude Desktop**
 }
 ```
 
-No install step — `npx -y @blackforge-so/mcp` fetches and runs the server on demand.
+No install step: `npx -y @blackforge-so/mcp` fetches and runs the server on demand.
 
 ### Where to get a key
 
@@ -40,9 +40,9 @@ tool works **without a key**, so you can verify the install before pasting one.
 
 | Tool | Returns |
 |------|---------|
-| `blackforge_catalog` | Every venue and every column definition — 9 venues, and `metricCount` is the live column count. Keyless. **Call this first** to learn valid `exchange` and `metric` identifiers. |
+| `blackforge_catalog` | Every venue and every column definition, with `metricCount` the live column count. Keyless. **Call this first** to learn valid `exchange` and `metric` identifiers. |
 | `blackforge_symbols` | The trading pairs a venue lists, e.g. `["BTCUSDT", …]`. |
-| `blackforge_latest` | The latest completed bucket for one `(exchange, symbol)` at the plan's interval (1 minute on Ultra and PAYG, 5 minutes otherwise) — a `values` object of column → number, with epoch-ms `ts`. Pass `columns` to narrow it. |
+| `blackforge_latest` | The latest completed bucket for one `(exchange, symbol)` at the plan's interval (1 minute on Ultra and PAYG, 5 minutes otherwise): a `values` object of column → number, with epoch-ms `ts`. Pass `columns` to narrow it. |
 | `blackforge_series` | A time series for one column over a range: ascending `{ ts, value }` points at `1m` (Ultra and PAYG), `5m`, `1h`, or `1d`. Capped at 50,000 points, newest kept, `truncated: true` when cut. One-minute rows start at the switch to one-minute rows (`availableFrom` in the catalog); `5m` covers all history. |
 | `blackforge_usage` | The key's recent request counts and remaining monthly row quota. |
 
@@ -94,7 +94,7 @@ saw before.
 
 Nothing about the tool contract changes. The chart payload travels in the result's `_meta`,
 which is protocol metadata and reaches no model, so `content[0].text` is **byte-identical**
-whether or not your host renders widgets — the token cost of a series is the same either way.
+whether or not your host renders widgets, so the token cost of a series is the same either way.
 That is deliberate: `structuredContent` would have been the obvious home for it, but core MCP
 treats that field as server-produced result data, and a host without Apps support may hand it
 to the model, doubling the cost of a large series.
@@ -103,7 +103,7 @@ The chart is one self-contained HTML file with uPlot and all CSS inlined, becaus
 render under a deny-by-default CSP where an external `<script>` would simply never load. It is
 read-only and never calls back into the server: it draws the points it was given and cannot
 spend your row quota behind your back. Series longer than 2,000 points are decimated **for the
-chart only** — the tool still returns every point — and the payload says so rather than
+chart only** (the tool still returns every point), and the payload says so rather than
 quietly thinning the line.
 
 ## Data quality
@@ -113,7 +113,7 @@ When the API reports a row's measurement quality, `blackforge_latest` carries it
 figures it flags) plus a plain-English `qualityNote`. `blackforge_series`
 aggregates it into one `qualitySummary` (`{ flaggedBuckets, of, flags }`) rather than repeating
 it on every point. Both keys are **omitted entirely** when nothing is flagged, and a
-`quality.raw` of `32768` means the row predates the quality rail and was never assessed —
+`quality.raw` of `32768` means the row predates the quality rail and was never assessed:
 unknown, not bad. The flag decode table lives on the `qualityFlags` metric in
 `blackforge_catalog`, as a `bits` array; this server reads it from there and never carries a
 copy of its own.
