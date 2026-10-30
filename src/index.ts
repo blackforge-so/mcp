@@ -34,7 +34,7 @@ import {
   type QualityBit,
 } from "./types.js";
 
-const VERSION = "0.4.1";
+const VERSION = "0.4.2";
 
 const client = new BlackForgeClient();
 

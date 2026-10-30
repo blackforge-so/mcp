@@ -1,14 +1,14 @@
 # @blackforge-so/mcp
 
 A [Model Context Protocol](https://modelcontextprotocol.io) stdio server that puts
-BlackForge market-data in your agent's hands. **The whole crypto market, in real time** —
-nine spot venues (binance, bitget, bybit, coinbase, gate, kraken, kucoin, mexc, okx) and
-every column it measures, per pair per closed minute (1m on Ultra and PAYG; 5m, 1h and 1d
-rollups for every plan).
+BlackForge market data in your agent's hands: **real time crypto market data from the major
+exchanges** (binance, bitget, bybit, coinbase, gate, kraken, kucoin, mexc, okx), 150+ metrics for
+14,000+ pairs, per pair per closed minute (1m on Ultra and PAYG; 5m, 1h and 1d rollups for every
+plan).
 
-Every column is a **measurement with a definition** — order-book depth and shape, resting
-liquidity lifetimes, trade-explained vs book-implied volume, spreads, market-wide context —
-returned in-context so an agent can read the raw microstructure directly. It is a thin client
+Every column is a **measurement with a definition**: order book depth and shape, resting
+liquidity lifetimes, trade-explained vs book-implied volume, spreads and market-wide context,
+returned in context so an agent can read the raw microstructure directly. It is a thin client
 over the public BlackForge `/v1` API; it stores nothing and re-shapes nothing.
 
 ## Quickstart
