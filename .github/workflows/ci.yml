@@ -22,3 +22,10 @@ jobs:
       # The integration suite drives the BUILT server over stdio, so build before test.
       - run: npm run build
       - run: npm test
+      # The built package, so a release can be smoke-tested against production and
+      # staged for npm from exactly what CI built.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 14
