@@ -57,6 +57,9 @@ export function formatAxisValue(value: number, unit: string): string {
       return groupedDecimals(Math.round(value), 0);
     case "ratio":
       return groupedDecimals(value, 4);
+    // Futures funding rates (MCP-only unit): fractions around 0.0001.
+    case "fraction":
+      return groupedDecimals(value, 6);
     case "percent":
       return `${groupedDecimals(value, 2)}%`;
     default:
@@ -81,6 +84,8 @@ export function formatReadoutValue(value: number | null | undefined, unit: strin
       return groupedDecimals(Math.round(value), 0);
     case "ratio":
       return groupedDecimals(value, 4);
+    case "fraction":
+      return groupedDecimals(value, 6);
     case "percent":
       return `${groupedDecimals(value, 2)}%`;
     case "bps":

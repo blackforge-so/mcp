@@ -6,6 +6,10 @@ import {
   BlackForgeApiError,
   type BlackForgeMeta,
   type CatalogResponse,
+  type FuturesLatestResponse,
+  type FuturesLiquidationsResponse,
+  type FuturesSeriesResponse,
+  type FuturesTopResponse,
   type LatestResponse,
   type SeriesResponse,
   type UsageResponse,
@@ -125,5 +129,66 @@ export class BlackForgeClient {
 
   usage(): Promise<Result<UsageResponse>> {
     return this.request<UsageResponse>("/v1/usage", {});
+  }
+
+  // ── futures (linear contracts) ──
+
+  futuresSymbols(exchange: string): Promise<Result<string[]>> {
+    return this.request<string[]>("/v1/futures/symbols", { exchange });
+  }
+
+  futuresLatest(exchange: string, symbol: string, columns?: string[]): Promise<Result<FuturesLatestResponse>> {
+    return this.request<FuturesLatestResponse>("/v1/futures/latest", {
+      exchange,
+      symbol,
+      columns: columns && columns.length ? columns.join(",") : undefined,
+    });
+  }
+
+  futuresSeries(args: {
+    exchange: string;
+    symbol: string;
+    metric: string;
+    from: string;
+    to: string;
+    interval: string;
+  }): Promise<Result<FuturesSeriesResponse>> {
+    return this.request<FuturesSeriesResponse>("/v1/futures/series", { ...args });
+  }
+
+  futuresTop(args: {
+    metric: string;
+    exchange?: string;
+    baseAsset?: string;
+    contractType?: string;
+    order?: string;
+    limit?: number;
+  }): Promise<Result<FuturesTopResponse>> {
+    return this.request<FuturesTopResponse>("/v1/futures/top", {
+      metric: args.metric,
+      exchange: args.exchange,
+      baseAsset: args.baseAsset,
+      contractType: args.contractType,
+      order: args.order,
+      limit: args.limit !== undefined ? String(args.limit) : undefined,
+    });
+  }
+
+  futuresLiquidations(args: {
+    exchange?: string;
+    symbol?: string;
+    side?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }): Promise<Result<FuturesLiquidationsResponse>> {
+    return this.request<FuturesLiquidationsResponse>("/v1/futures/liquidations", {
+      exchange: args.exchange,
+      symbol: args.symbol,
+      side: args.side,
+      from: args.from,
+      to: args.to,
+      limit: args.limit !== undefined ? String(args.limit) : undefined,
+    });
   }
 }

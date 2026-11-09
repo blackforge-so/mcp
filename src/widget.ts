@@ -25,7 +25,13 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CatalogMetric, CatalogResponse, QualityBit, SeriesPoint } from "./types.js";
+import type {
+  CatalogMetric,
+  CatalogResponse,
+  FuturesCatalogMetric,
+  QualityBit,
+  SeriesPoint,
+} from "./types.js";
 
 /** The `ui://` resource the chart tool points at. Path shape is arbitrary; this one is stable. */
 export const WIDGET_URI = "ui://blackforge/series-chart.html";
@@ -215,6 +221,28 @@ export function findMetric(
 }
 
 /**
+ * One FUTURES column, shaped for the chart. The futures `ratio` columns are
+ * funding rates, fractions around 0.0001, where the spot ratio's four decimals
+ * would round a 0.005% rate to nothing; they travel as `fraction`, which the
+ * widget prints with six. Every other unit passes through as served.
+ */
+export function findFuturesMetric(
+  catalog: CatalogResponse | undefined,
+  key: string,
+): ChartMetricMeta | undefined {
+  const meta: FuturesCatalogMetric | undefined = catalog?.futures?.metrics.find((m) => m.key === key);
+  if (!meta) return undefined;
+  return {
+    label: meta.label,
+    unit: meta.unit === "ratio" ? "fraction" : meta.unit,
+    family: meta.family,
+  };
+}
+
+/** What the chart needs from a catalog entry, spot or futures. */
+export type ChartMetricMeta = Pick<CatalogMetric, "label" | "unit" | "family">;
+
+/**
  * Read the built widget HTML off disk, once per process.
  *
  * Two candidate paths because the built server lives at `dist/index.js` (so the
@@ -254,7 +282,7 @@ export function buildChartPayload(input: {
   metric: string;
   interval: string;
   points: SeriesPoint[];
-  meta: CatalogMetric | undefined;
+  meta: ChartMetricMeta | undefined;
   bits: QualityBit[];
   columnsOmitted: string[];
 }): WidgetPayload {

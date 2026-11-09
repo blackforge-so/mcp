@@ -50,6 +50,8 @@ export interface CatalogVenue {
 export interface CatalogResponse {
   venues: CatalogVenue[];
   metrics: CatalogMetric[];
+  /** Linear futures contracts. Absent on an API that serves no futures. */
+  futures?: FuturesCatalog;
   /** When the one-minute rows start (ISO), null before the switch. */
   availableFrom?: {
     "1m": string | null;
@@ -125,6 +127,81 @@ export interface BlackForgeMeta {
   /** Columns dropped because the caller's plan does not include them. */
   columnsOmitted?: string[];
   blocksBilled?: number;
+}
+
+// ── futures (linear contracts, /v1/futures/*) ──────────────────────────────
+// Their own catalog block: the spot `metrics` array never carries a futures
+// column, and the futures quality bits are a separate table.
+
+export interface FuturesCatalogVenue {
+  venue: string;
+  minPlan: string;
+  /** How complete the venue's public liquidation feed is; null when it publishes none. */
+  liquidations?: "complete" | "lowerBound" | null;
+}
+
+export interface FuturesCatalogMetric {
+  key: string;
+  label: string;
+  family: string;
+  unit: string;
+  nullable?: boolean;
+  description?: string;
+  rollup?: string;
+  plottable?: boolean;
+  intervals?: string[];
+  /** null on internal columns, which belong to no plan. */
+  minPlan: string | null;
+  /** Venues where the column is always null. */
+  nullOn?: string[];
+  internal?: boolean;
+}
+
+export interface FuturesCatalog {
+  venues: FuturesCatalogVenue[];
+  metrics: FuturesCatalogMetric[];
+  qualityBits?: QualityBit[];
+  liquidationEvents?: { minPlan: string; fields: Array<{ key: string; unit?: string; description?: string }> };
+  availableFrom?: string | null;
+  historyDays?: number;
+}
+
+export interface FuturesLatestResponse {
+  ts: number;
+  interval?: string;
+  /** Text columns (baseAsset, quoteAsset, contractType) are strings. */
+  values: Record<string, number | string | null>;
+  quality?: QualityAssessment;
+}
+
+export interface FuturesSeriesResponse extends SeriesResponse {
+  interval?: string;
+}
+
+export interface FuturesTopResponse {
+  metric: string;
+  interval?: string;
+  ts: number;
+  order?: string;
+  rows: Array<{ exchange: string; symbol: string; baseAsset: string; value: number | null }>;
+}
+
+export interface LiquidationEvent {
+  ts: number;
+  exchange: string;
+  symbol: string;
+  /** The POSITION liquidated. */
+  side: string;
+  price: number | null;
+  quantity: number | null;
+  notional: number | null;
+}
+
+export interface FuturesLiquidationsResponse {
+  from: number | string;
+  to: number | string;
+  events: LiquidationEvent[];
+  truncated?: boolean;
 }
 
 /** Thrown on any non-2xx API response. Carries the HTTP status and server message. */

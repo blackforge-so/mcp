@@ -10,6 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { BlackForgeClient, type Result } from "./client.js";
+import { registerFuturesTools } from "./futures-tools.js";
 import { registerRealtimeTools } from "./realtime-tools.js";
 import {
   anyFlagged,
@@ -138,7 +139,7 @@ server.registerTool(
     title: "BlackForge catalog",
     annotations: HISTORY_READ,
     description:
-      "List every venue BlackForge covers (9 spot exchanges) and every column it measures " +
+      "List every venue BlackForge covers (the major spot exchanges) and every column it measures " +
       "(one wide row per (exchange, symbol) per minute, served at 1m, 5m, 1h and 1d: order-book depth and " +
       "shape, resting-liquidity lifetimes, trade-explained vs book-implied volume, spreads, " +
       "and market-wide context). `metricCount` is the exact number of columns available now. " +
@@ -149,7 +150,13 @@ server.registerTool(
       "window end whose order book was read as it stood at that instant (such rows have `bookObservedAt` equal to `ts`, " +
       "so venues line up), null before; the order book columns carry a one-sentence `bookTimingNote` on it. " +
       "The `qualityFlags` metric also carries the `bits` table that " +
-      "decodes the per-row quality mask. This route needs no API key. " +
+      "decodes the per-row quality mask. `futures` describes the linear futures contracts (perpetual and " +
+      "dated) on the major futures venues, read by the blackforge_futures_* tools: its own `venues` (each with " +
+      "`minPlan` and `liquidations`: complete, lowerBound or null), `metrics` (prices, funding, open interest, " +
+      "taker flow, liquidations), the `qualityBits` table that decodes a futures row's quality mask, " +
+      "`liquidationEvents` (the plan the event feed needs and its fields), `availableFrom` and `historyDays` " +
+      "(futures history is a rolling window); `futuresMetricCount` is the number of futures columns sold. " +
+      "This route needs no API key. " +
       "CALL THIS FIRST to learn the exact `exchange` and `metric` identifiers the other tools accept.",
     inputSchema: {},
   },
@@ -309,6 +316,9 @@ server.registerTool(
       (data) => ({ ...data }),
     ),
 );
+
+// ── linear futures contracts (/v1/futures/*) ─────────────────────────────────
+registerFuturesTools(server, client, cachedCatalog);
 
 // ── live formulas, notifications and live order book reads ──────────────────
 registerRealtimeTools(server);

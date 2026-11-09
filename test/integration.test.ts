@@ -55,7 +55,7 @@ describe("stdio integration", () => {
     apiUp = await localApiUp();
   });
 
-  it("lists every tool: the five history tools plus the live ones", async () => {
+  it("lists every tool: the history tools, the futures tools and the live ones", async () => {
     const client = await makeClient(MAX_KEY);
     try {
       const { tools } = await client.listTools();
@@ -72,6 +72,11 @@ describe("stdio integration", () => {
         "blackforge_formula_list",
         "blackforge_formula_validate",
         "blackforge_formula_watch",
+        "blackforge_futures_latest",
+        "blackforge_futures_liquidations",
+        "blackforge_futures_series",
+        "blackforge_futures_symbols",
+        "blackforge_futures_top",
         "blackforge_latest",
         "blackforge_series",
         "blackforge_spread_map",
@@ -512,6 +517,189 @@ describe("widget (stub API)", () => {
         expect(chart.bits.map((b) => b.name)).toEqual(["BOOK_DESYNCED", "EVENTS_LOST"]);
       },
       UI_CAPABILITY,
+    );
+  });
+});
+
+// ── futures tools (stub API) ─────────────────────────────────────────────────
+
+const FUTURES_STUB_CATALOG = {
+  venues: [],
+  metrics: [],
+  futures: {
+    venues: [
+      { venue: "binance", minPlan: "free", liquidations: "lowerBound" },
+      { venue: "bybit", minPlan: "pro", liquidations: "complete" },
+    ],
+    metrics: [
+      { key: "fundingRate", label: "Funding rate", family: "funding", unit: "ratio", minPlan: "free" },
+      { key: "rowVersion", label: "Row version", family: "quality", unit: "count", minPlan: null, internal: true },
+    ],
+    qualityBits: [{ bit: 0, mask: 1, name: "QUOTE_MISSING", contaminates: ["price", "funding", "openInterest"] }],
+    liquidationEvents: { minPlan: "max", fields: [] },
+    availableFrom: "2026-11-07T22:04:00.000Z",
+    historyDays: 60,
+  },
+};
+
+async function withFuturesStub(
+  routes: Record<string, { status?: number; body: unknown }>,
+  fn: (client: Client, seen: string[]) => Promise<void>,
+): Promise<void> {
+  const seen: string[] = [];
+  const server: Server = createServer((req, res) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    seen.push(url.pathname + url.search);
+    const route = Object.entries(routes).find(([suffix]) => url.pathname.endsWith(suffix));
+    const { status, body } = route ? route[1] : { status: 200, body: FUTURES_STUB_CATALOG };
+    res.writeHead(status ?? 200, { "content-type": "application/json" });
+    res.end(JSON.stringify(body));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [distEntry],
+    env: {
+      PATH: process.env.PATH ?? "",
+      BLACKFORGE_BASE_URL: `http://127.0.0.1:${port}/api`,
+      BLACKFORGE_API_KEY: MAX_KEY,
+    },
+  });
+  const client = new Client({ name: "blackforge-test", version: "0.0.0" });
+  await client.connect(transport);
+  try {
+    await fn(client, seen);
+  } finally {
+    await client.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+describe("futures tools (stub API)", () => {
+  it("every futures tool is read-only and open-world, like the history tools", async () => {
+    await withFuturesStub({}, async (client) => {
+      const { tools } = await client.listTools();
+      const futures = tools.filter((t) => t.name.startsWith("blackforge_futures_"));
+      expect(futures).toHaveLength(5);
+      for (const tool of futures) {
+        expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: true });
+        // copy rules: no em dash anywhere a host shows the user
+        expect(tool.description ?? "").not.toContain("\u2014");
+      }
+      const series = futures.find((t) => t.name === "blackforge_futures_series");
+      expect((series?._meta as { ui?: { resourceUri?: string } }).ui?.resourceUri).toBe(
+        "ui://blackforge/series-chart.html",
+      );
+    });
+  });
+
+  it("catalog carries the futures block through and adds futuresMetricCount", async () => {
+    await withFuturesStub({}, async (client) => {
+      const catalog = await call(client, "blackforge_catalog", {});
+      expect(catalog.futures).toEqual(FUTURES_STUB_CATALOG.futures);
+      expect(catalog.futuresMetricCount).toBe(1);
+    });
+  });
+
+  it("futures_latest hits /v1/futures/latest and keeps text values", async () => {
+    const body = { ts: 1794614400000, interval: "1m", values: { contractType: "perpetual", fundingRate: 0.0001 } };
+    await withFuturesStub({ "/v1/futures/latest": { body } }, async (client, seen) => {
+      const latest = await call(client, "blackforge_futures_latest", {
+        exchange: "bybit",
+        symbol: "BTCUSDT",
+        columns: ["contractType", "fundingRate"],
+      });
+      expect(latest.values).toEqual(body.values);
+      expect(latest.tsIso).toBe("2026-11-14T00:00:00.000Z");
+      expect(seen.find((u) => u.includes("/v1/futures/latest"))).toContain("columns=contractType%2CfundingRate");
+    });
+  });
+
+  it("futures_series summarises futures flags and attaches the chart with the futures meta", async () => {
+    const body = {
+      metric: "fundingRate",
+      exchange: "bybit",
+      symbol: "BTCUSDT",
+      interval: "1h",
+      points: [
+        { ts: 1, value: 0.0001, quality: 0, qualityAll: 0 },
+        { ts: 2, value: null, quality: 1, qualityAll: 1 },
+      ],
+    };
+    await withFuturesStub({ "/v1/futures/series": { body } }, async (client) => {
+      const res = (await client.callTool({
+        name: "blackforge_futures_series",
+        arguments: {
+          exchange: "bybit",
+          symbol: "BTCUSDT",
+          metric: "fundingRate",
+          from: "2026-11-08T00:00:00Z",
+          to: "2026-11-09T00:00:00Z",
+          interval: "1h",
+        },
+      })) as { content: Array<{ type: string; text?: string }>; _meta?: Record<string, unknown> };
+      const parsed = JSON.parse(textOf(res));
+      expect(parsed.qualitySummary).toEqual({ flaggedBuckets: 1, of: 2, flags: { QUOTE_MISSING: 1 } });
+      expect(parsed.points).toEqual([
+        { ts: 1, value: 0.0001 },
+        { ts: 2, value: null },
+      ]);
+      const chart = res._meta?.["so.blackforge/chart"] as Record<string, unknown>;
+      expect(chart).toMatchObject({ v: 1, label: "Funding rate", unit: "fraction", family: "funding" });
+    });
+  });
+
+  it("futures_top passes the filters through", async () => {
+    const body = {
+      metric: "fundingRate",
+      interval: "1h",
+      ts: 1794614400000,
+      order: "desc",
+      rows: [{ exchange: "bybit", symbol: "BTCUSDT", baseAsset: "BTC", value: 0.0001 }],
+    };
+    await withFuturesStub({ "/v1/futures/top": { body } }, async (client, seen) => {
+      const top = await call(client, "blackforge_futures_top", {
+        metric: "fundingRate",
+        baseAsset: "BTC",
+        contractType: "perpetual",
+        limit: 5,
+      });
+      expect(top.rowCount).toBe(1);
+      const url = seen.find((u) => u.includes("/v1/futures/top")) ?? "";
+      expect(url).toContain("baseAsset=BTC");
+      expect(url).toContain("contractType=perpetual");
+      expect(url).toContain("limit=5");
+    });
+  });
+
+  it("futures_liquidations adds the feed note from the catalog; a 403 becomes a tool error", async () => {
+    const body = {
+      from: 1794610800000,
+      to: 1794614400000,
+      events: [{ ts: 1, exchange: "binance", symbol: "ETHUSDT", side: "long", price: 1, quantity: 1, notional: 1 }],
+    };
+    await withFuturesStub({ "/v1/futures/liquidations": { body } }, async (client) => {
+      const liq = await call(client, "blackforge_futures_liquidations", {});
+      expect(liq.eventCount).toBe(1);
+      expect(String(liq.feedNote)).toContain("binance throttles its public liquidation feed");
+    });
+    await withFuturesStub(
+      {
+        "/v1/futures/liquidations": {
+          status: 403,
+          body: { message: "Liquidation events are not included in the pro plan. Upgrade at https://blackforge.so/pricing." },
+        },
+      },
+      async (client) => {
+        const res = (await client.callTool({ name: "blackforge_futures_liquidations", arguments: {} })) as {
+          content: Array<{ type: string; text?: string }>;
+          isError?: boolean;
+        };
+        expect(res.isError).toBe(true);
+        expect(textOf(res)).toContain("HTTP 403");
+        expect(textOf(res)).toContain("blackforge.so/pricing");
+      },
     );
   });
 });

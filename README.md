@@ -4,7 +4,8 @@ A [Model Context Protocol](https://modelcontextprotocol.io) stdio server that pu
 BlackForge market data in your agent's hands: **real time crypto market data from the major
 exchanges** (binance, bitget, bybit, coinbase, gate, kraken, kucoin, mexc, okx), 150+ metrics for
 14,000+ pairs, per pair per closed minute (1m on Ultra and PAYG; 5m, 1h and 1d rollups for every
-plan).
+plan). It also reads the linear futures contracts on the major futures venues: funding, open
+interest, prices, taker flow and liquidations ([Futures](#futures)).
 
 Every column is a **measurement with a definition**: order book depth and shape, resting
 liquidity lifetimes, trade-explained vs book-implied volume, spreads and market-wide context,
@@ -52,6 +53,30 @@ it in `columnsOmitted` so the agent understands why a key is absent. Venue- or i
 restrictions come back as a clear tool error carrying the HTTP status and the server's message
 (including the upgrade URL, verbatim).
 
+## Futures
+
+The same key reads the **linear futures contracts** (perpetual and dated) on the major
+futures venues, in real time: mark, index, last and best bid and ask prices, the funding rate
+and next funding time, open interest in coins and in quote currency, taker buy and total
+volume, and liquidations. History is a rolling 60 days, from 7 November 2026. The
+`futures` block of `blackforge_catalog` lists the futures venues (with whether each publishes
+a liquidation feed), every futures column, its own quality-flag table and the history window.
+
+| Tool | Returns | Plan |
+|------|---------|------|
+| `blackforge_futures_symbols` | The contracts a futures venue lists, spelled the way the venue spells them (`BTCUSDT`, `BTC-USDT-SWAP`, `BTC_USDT`, `XBTUSDTM`). | Every plan |
+| `blackforge_futures_latest` | The latest complete bucket for one contract at the plan's interval: a `values` object (numbers, plus `baseAsset`, `quoteAsset` and `contractType` as text), `ts`, `interval`, and the row's `quality` when present. | Every plan |
+| `blackforge_futures_series` | One futures column over a range at `1m`, `5m`, `1h` or `1d`, with the same chart widget as `blackforge_series` and a `qualitySummary` when a bucket is flagged. | Every plan |
+| `blackforge_futures_top` | Contracts ranked by one column on the latest bucket, on one venue or across all of them; `baseAsset: "BTC"` puts one coin's funding or open interest on every venue side by side. | Every plan |
+| `blackforge_futures_liquidations` | Liquidation events, newest first (`side` is the position liquidated), the last hour by default, with a `feedNote` when a venue in the result throttles its feed. | Max, Ultra, PAYG |
+
+Plans follow the spot ladder: Free reads binance, gate and mexc futures as daily bars over the
+last 14 days; Pro adds every futures venue at `1h`; Max goes down to `5m` and adds the
+liquidation columns and the event feed; Ultra and PAYG go down to `1m`. A funding rate is per
+the venue's own funding interval, which differs between venues. Liquidations come from each
+venue's public feed: some venues throttle it (a lower bound in a cascade) and some publish
+none (`null`); the catalog says which.
+
 ## Live formulas and the live order book
 
 Beyond the stored history, the server reaches BlackForge's realtime host. Write your own
@@ -86,7 +111,7 @@ in a URL.
 
 ## Charts
 
-`blackforge_series` also ships an interactive chart. A host that implements the
+`blackforge_series` and `blackforge_futures_series` also ship an interactive chart. A host that implements the
 [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) extension
 (`io.modelcontextprotocol/ui`) renders the result as a line chart with flagged buckets drawn
 in the same convention the BlackForge console uses; every other host sees exactly the JSON it

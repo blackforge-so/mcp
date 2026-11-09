@@ -13,6 +13,9 @@
 import type {
   BlackForgeMeta,
   CatalogResponse,
+  FuturesLatestResponse,
+  FuturesLiquidationsResponse,
+  FuturesTopResponse,
   LatestResponse,
   QualityAssessment,
   QualityBit,
@@ -76,12 +79,32 @@ function joinWords(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/** Where the spot decode table lives, for the note on a flag the server did not decode. */
+const SPOT_TABLE_HINT =
+  "Call blackforge_catalog and read the `bits` table on the qualityFlags metric for what each flag means.";
+
+/** Where the futures decode table lives. A field, not an instruction. */
+export const FUTURES_TABLE_HINT =
+  "The futures `qualityBits` table in blackforge_catalog says what each flag means.";
+
+/**
+ * Pull the FUTURES decode table off a catalog payload. Never the spot table:
+ * the same bit number means a different thing on a futures row.
+ */
+export function futuresBitsFromCatalog(catalog: CatalogResponse): QualityBit[] {
+  return catalog.futures?.qualityBits ?? [];
+}
+
 /**
  * A short sentence the model can act on. A bare mask like 6 is meaningless to a
  * reader that never fetched the decode table, so the note spells the situation
  * out. Returns undefined for a clean row so the key costs no tokens.
+ * `tableHint` names where the decode table lives (spot by default).
  */
-export function qualityNote(quality: QualityAssessment | undefined): string | undefined {
+export function qualityNote(
+  quality: QualityAssessment | undefined,
+  tableHint: string = SPOT_TABLE_HINT,
+): string | undefined {
   if (!quality) return undefined;
   const raw = quality.raw;
   if (typeof raw !== "number" || raw === 0) return undefined;
@@ -102,9 +125,7 @@ export function qualityNote(quality: QualityAssessment | undefined): string | un
         "every other column in the row is unaffected.",
     );
   } else {
-    parts.push(
-      "Call blackforge_catalog and read the `bits` table on the qualityFlags metric for what each flag means.",
-    );
+    parts.push(tableHint);
   }
   return parts.join(" ");
 }
@@ -160,7 +181,12 @@ export function anyFlagged(points: Array<{ quality?: number }>): boolean {
 // --- payload shapers --------------------------------------------------------
 
 export function shapeCatalog(data: CatalogResponse): unknown {
-  return { ...data, metricCount: data.metrics.length };
+  // Sold futures columns only: an internal one measures the recorder and is in no plan.
+  const futuresMetrics = data.futures?.metrics;
+  const futures = Array.isArray(futuresMetrics)
+    ? { futuresMetricCount: futuresMetrics.filter((m) => !m.internal).length }
+    : {};
+  return { ...data, metricCount: data.metrics.length, ...futures };
 }
 
 export function shapeLatest(
@@ -203,5 +229,69 @@ export function shapeSeries(
     pointCount: data.points.length,
     ...(summary ? { qualitySummary: summary } : {}),
     columnsOmitted: meta.columnsOmitted ?? [],
+  };
+}
+
+// --- futures shapers (same additive rule) -------------------------------------
+
+export function shapeFuturesLatest(
+  data: FuturesLatestResponse,
+  meta: BlackForgeMeta,
+  ctx: { exchange: string; symbol: string },
+): unknown {
+  const note = qualityNote(data.quality, FUTURES_TABLE_HINT);
+  const base = { exchange: ctx.exchange, symbol: ctx.symbol };
+  return {
+    ...base,
+    ...data,
+    tsIso: data.ts ? new Date(data.ts).toISOString() : null,
+    valueCount: Object.keys(data.values).length,
+    ...(note ? { qualityNote: note } : {}),
+    rowsRemaining: meta.rowsRemaining,
+    columnsOmitted: meta.columnsOmitted ?? [],
+  };
+}
+
+export function shapeFuturesTop(data: FuturesTopResponse, meta: BlackForgeMeta): unknown {
+  return {
+    ...data,
+    tsIso: data.ts ? new Date(data.ts).toISOString() : null,
+    rowCount: data.rows.length,
+    rowsRemaining: meta.rowsRemaining,
+    columnsOmitted: meta.columnsOmitted ?? [],
+  };
+}
+
+/**
+ * `lowerBound` is the catalog's word for a venue that throttles its public
+ * liquidation feed. Which venues those are comes from the catalog, never a
+ * local list; the note only names venues actually present in the result.
+ */
+export function liquidationFeedNote(
+  events: Array<{ exchange: string }>,
+  lowerBoundVenues: string[],
+): string | undefined {
+  const present = lowerBoundVenues.filter((venue) => events.some((e) => e.exchange === venue));
+  if (!present.length) return undefined;
+  const who = joinWords(present);
+  return present.length === 1
+    ? `${who} throttles its public liquidation feed, so in a cascade its events here are a lower bound.`
+    : `${who} throttle their public liquidation feeds, so in a cascade their events here are a lower bound.`;
+}
+
+export function shapeFuturesLiquidations(
+  data: FuturesLiquidationsResponse,
+  meta: BlackForgeMeta,
+  lowerBoundVenues: string[],
+): unknown {
+  const iso = (v: number | string) => (typeof v === "number" ? new Date(v).toISOString() : v);
+  const note = liquidationFeedNote(data.events, lowerBoundVenues);
+  return {
+    ...data,
+    fromIso: iso(data.from),
+    toIso: iso(data.to),
+    eventCount: data.events.length,
+    ...(note ? { feedNote: note } : {}),
+    rowsRemaining: meta.rowsRemaining,
   };
 }

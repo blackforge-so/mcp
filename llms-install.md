@@ -6,7 +6,9 @@ Notes for AI agents (Cline and others) that set this server up for a user.
 
 A stdio MCP server, published on npm as `@blackforge-so/mcp`. It gives the agent real time
 crypto market data from the major exchanges: order book depth, liquidity added and pulled,
-order ladders and what actually traded, 150+ metrics for 14,000+ pairs.
+order ladders and what actually traded, 150+ metrics for 14,000+ pairs, plus the linear futures
+contracts on the major futures venues: funding, open interest, prices, taker flow and
+liquidations.
 
 ## Requirements
 
@@ -35,7 +37,8 @@ order ladders and what actually traded, 150+ metrics for 14,000+ pairs.
    leave the value empty: the server still starts, and `blackforge_catalog` works without a key.
 4. Verify the install by calling `blackforge_catalog` with no arguments. It returns every venue
    and every metric definition, plus `metricCount`. If it answers, the server is installed.
-5. With a key set, try `blackforge_latest` with `{"exchange": "binance", "symbol": "BTCUSDT"}`.
+5. With a key set, try `blackforge_latest` with `{"exchange": "binance", "symbol": "BTCUSDT"}`,
+   and for futures `blackforge_futures_latest` with the same arguments.
 
 ## If something fails
 

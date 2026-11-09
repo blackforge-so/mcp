@@ -28,7 +28,11 @@
     "crypto",
     "market-data",
     "order-book",
-    "microstructure"
+    "microstructure",
+    "futures",
+    "funding-rate",
+    "open-interest",
+    "liquidations"
   ],
   "author": "BlackForge",
   "license": "MIT",
