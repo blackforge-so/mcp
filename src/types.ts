@@ -163,7 +163,8 @@ export interface FuturesCatalog {
   qualityBits?: QualityBit[];
   liquidationEvents?: { minPlan: string; fields: Array<{ key: string; unit?: string; description?: string }> };
   availableFrom?: string | null;
-  historyDays?: number;
+  /** null: futures are kept like spot (no retention limit); the plan's history window applies. */
+  historyDays?: number | null;
 }
 
 export interface FuturesLatestResponse {

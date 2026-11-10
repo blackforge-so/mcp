@@ -69,7 +69,7 @@ const CATALOG: CatalogResponse = {
     ],
     liquidationEvents: { minPlan: "max", fields: [] },
     availableFrom: "2026-11-07T22:04:00.000Z",
-    historyDays: 60,
+    historyDays: null,
   },
 };
 

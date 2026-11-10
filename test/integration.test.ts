@@ -538,7 +538,7 @@ const FUTURES_STUB_CATALOG = {
     qualityBits: [{ bit: 0, mask: 1, name: "QUOTE_MISSING", contaminates: ["price", "funding", "openInterest"] }],
     liquidationEvents: { minPlan: "max", fields: [] },
     availableFrom: "2026-11-07T22:04:00.000Z",
-    historyDays: 60,
+    historyDays: null,
   },
 };
 

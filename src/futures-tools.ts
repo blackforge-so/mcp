@@ -128,8 +128,8 @@ export function registerFuturesTools(
         "{ ts, value } with `ts` in epoch milliseconds and `value` the number or null. `from`/`to` are ISO-8601 " +
         "datetimes; `interval` is one of 1m, 5m, 1h, 1d, and an interval finer than the plan's (" +
         PLAN_INTERVALS +
-        ") is an HTTP 403. Futures history is a rolling window: `futures.historyDays` and " +
-        "`futures.availableFrom` in blackforge_catalog, shorter on Free; a `from` before the plan's window is " +
+        ") is an HTTP 403. Futures history is kept like spot: it starts at `futures.availableFrom` in " +
+        "blackforge_catalog and each plan reads its usual history window; a `from` before the plan's window is " +
         "moved forward to it without an error, so the first point can start later than asked. Flows (volume, " +
         "taker volume, trades, liquidations) are summed into a bucket; prices, funding and open interest are " +
         "the bucket's last minute (`rollup` on each catalog entry). At most 50,000 points, newest kept, with " +

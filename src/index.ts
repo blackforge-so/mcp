@@ -154,8 +154,9 @@ server.registerTool(
       "dated) on the major futures venues, read by the blackforge_futures_* tools: its own `venues` (each with " +
       "`minPlan` and `liquidations`: complete, lowerBound or null), `metrics` (prices, funding, open interest, " +
       "taker flow, liquidations), the `qualityBits` table that decodes a futures row's quality mask, " +
-      "`liquidationEvents` (the plan the event feed needs and its fields), `availableFrom` and `historyDays` " +
-      "(futures history is a rolling window); `futuresMetricCount` is the number of futures columns sold. " +
+      "`liquidationEvents` (the plan the event feed needs and its fields), `availableFrom` (where futures " +
+      "history starts) and `historyDays` (null: futures are kept like spot, so the plan's history window is " +
+      "the only limit); `futuresMetricCount` is the number of futures columns sold. " +
       "This route needs no API key. " +
       "CALL THIS FIRST to learn the exact `exchange` and `metric` identifiers the other tools accept.",
     inputSchema: {},

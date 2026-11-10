@@ -58,9 +58,10 @@ restrictions come back as a clear tool error carrying the HTTP status and the se
 The same key reads the **linear futures contracts** (perpetual and dated) on the major
 futures venues, in real time: mark, index, last and best bid and ask prices, the funding rate
 and next funding time, open interest in coins and in quote currency, taker buy and total
-volume, and liquidations. History is a rolling 60 days, from 7 November 2026. The
-`futures` block of `blackforge_catalog` lists the futures venues (with whether each publishes
-a liquidation feed), every futures column, its own quality-flag table and the history window.
+volume, and liquidations. History is kept like spot, from 7 November 2026: each plan reads
+futures through its usual history window. The `futures` block of `blackforge_catalog` lists
+the futures venues (with whether each publishes a liquidation feed), every futures column, its
+own quality-flag table and when the history starts.
 
 | Tool | Returns | Plan |
 |------|---------|------|
